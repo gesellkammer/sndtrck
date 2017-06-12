@@ -1,0 +1,8 @@
+--index-url https://pypi.python.org/simple/
+numpy>=1.8
+sndfileio>=0.6
+bpf4>0.7
+loristrck
+-e .
+
+

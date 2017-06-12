@@ -1,0 +1,10 @@
+build/
+dist/
+src/
+*.pyc
+*.c
+*.so
+sndtrck/old
+__pycache__
+*.egg-info
+report.html
