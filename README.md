@@ -3,36 +3,35 @@ SNDTRCK
 
 A simple data-type and io routines for audio partial tracking.
 
+![plot](img/example-plot.jpg)
+
 **Needs python >= 3.6**
 
 # Dependencies
 
 ## Mandatory
 
-### Python packages
+* numpy
+* [bpf4]: interpolation curves
+* [sndfileio]: simple API for reading and writing sound-files
+* [loristrck]: partial tracking analysis based on Loris. See the project for its own set of dependencies
 
-* [numpy]  
-* [bpf4]   -- interpolation curves
-* [sndfileio] -- simple API for reading and writing sound-files
-* [loristrck] -- partial tracking analysis based on Loris. See the project for its own set of dependencies
+## Optional but HIGHLY recommended
 
-### Libraries
-
-* fftw
-
-## Optional but HIGLY recommended
-* [pyqtgraph] -- efficient plotting via Qt 
-* [h5py]      -- allows saving partial-tracking data as HDF5. You need to install hdf5.
+* [pyqtgraph]: efficient plotting via Qt 
+* h5py: allows saving partial-tracking data as HDF5. You need to install hdf5.
 
 # Installation
+
+We assume that `pip` points to your current python >= 3.6 installation
 
 ## Linux
 
     $ sudo apt-get install fftw-dev
-    $ pip install -r requirements.txt
+    $ pip install -r requirements.txt [--user]
     $ git clone https://github.com/gesellkammer/sndtrck
     $ cd sndtrck
-    $ python setup.py install
+    $ python setup.py install [--user]
     
 ## OSX
 

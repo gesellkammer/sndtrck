@@ -15,7 +15,7 @@ from . import log as _log
 from .util import *
 import bpf4 as bpf
 from typing import Iterable as I, Optional as Opt, Tuple as Tup, List
-from backend_loris import analyze as analyze
+from .backend_loris import analyze as analyze
 
 BPF = bpf.BpfInterface
 

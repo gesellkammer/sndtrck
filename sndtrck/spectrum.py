@@ -457,6 +457,12 @@ class Spectrum(object):
         partials = [p.shifted(dt=dt, df=df) for p in self.partials]
         return Spectrum(partials)
 
+    def __lshift__(self, secs):
+        return self.shifted(-secs)
+
+    def __rshift__(self, secs):
+        return self.shifted(secs)
+
     def synthesize(self, samplerate=44100, outfile=""):
         # type: (int, str) -> np.ndarray
         """
