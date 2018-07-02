@@ -1,23 +1,23 @@
-from __future__ import division as _division
-from __future__ import absolute_import
 from bpf4 import bpf
 import operator as _operator
+import logging
 import tempfile
-from emlib.pitch import db2amp
-from emlib.iterlib import pairwise
+from functools import lru_cache
+from emlib.pitch import db2amp, f2m
+from emlib.snd import audiosample
 
-from . import music
 from . import io
-from . import log
-from .config import CONFIG
+from .config import getconfig
 from .util import *
 from .partial import Partial
-from typing import Iterable as Iter, List, Callable, Optional as Opt, Tuple, Iterator
+from . import music
+from .typehints import Dict, List, Iter, Tup, Opt, Fun1
+
 
 Bpf = bpf.BpfInterface
 inf = float("inf")
 
-logger = log.get_logger()
+logger = logging.getLogger("sndtrck")
 
 
 #######################################################################
@@ -28,42 +28,64 @@ logger = log.get_logger()
 
 
 class Spectrum(object):
-    def __init__(self, partials):
-        # type: (Iter[Partial]) -> None
+    def __init__(self, partials:Iter[Partial], *,
+                 skipsort=False, packed=False):
         """
         partials: a seq. of Partial (can be a generator).
-        To read a saved Specrum, call Spectrum.read
+        To read a saved Spectrum, call Spectrum.read
+
+        
+        skipsort: if True, sorting of the partials will be skipped
+        packed: metadata to indicate that this Spectrum is the packed
+                version of another spectrum, with non-simultaneous
+                partials melded into longer tracks, to minimize the
+                number of partials (this is done mostly for resynthesis)
 
         See Also: analyze
         """
-        self.partials = []            # type: List[Partial]
-        self._last_written_file=""  # type: str
-        self._f0 = None  # type: Opt[io.EstimateF0]
-        self.t0 = 0.0    # type: float
-        self.t1 = 0.0    # type: float
-        self._set_partials(partials)
+        self._t1 = -1.0             
+        self._f0 = -1.0             
+        self.packed: bool = packed     
+        self._sorted: bool = skipsort  
+        self.partials = aslist(partials)
+        if not skipsort:
+            self.partials.sort(key=lambda p:p.t0)
+        self.t0: float = partials[0].t0 if partials else 0
         if self.t0 < 0:
-            logger.warning("Attempted to create a Spectrum with a negative time: %.2f" % self.t0)
-            if not CONFIG['allow_negative_times']:
-                shifted = self.shifted(dt= -self.t0)
-                self._set_partials(shifted.partials)
-                logger.warning("Shifed Spectrum to time=%.2f" % self.t0)
+            logger.error("Attempting to create a Spectrum negative time: %.2f" % self.t0)
+            config = getconfig()
+            if not config['spectrum.allow_negative_times']:
+                logger.info("Cropping negative part of spectrum")
+                partials = [p.crop(0, inf) for p in self.partials]
+                self.partials = partials
+                self.t0 = 0
+                
+    def _clear_cache(self):
+        self._synthesize.cache_clear()
+        
+    def _sort(self, force=False):
+        if not self._sorted or force:
+            partials = self.partials
+            if not partials:
+                return
+            partials.sort(key=lambda p: p.t0)
+            self._sorted = True
+            self._t0 = partials[0].t0
+            self._t1 = -1  # max(p.t1 for p in partials)
+        return self
 
-    def _set_partials(self, partials):
-        # type: (Iter[Partial]) -> None
-        self.partials = list(partials)
-        assert all(isinstance(partial, Partial) for partial in self.partials)
-        self._reset()
+    def __hash__(self):
+        # type: () -> int
+        s = self.__repr__()
+        numbreakpoints = sum(p.numbreakpoints for p in self)
+        return hash((s, numbreakpoints))
 
-    def _reset(self):
-        self._sort_if_needed()
-        self.t0 = min(p.t0 for p in self.partials) if self.partials else 0
-        self.t1 = max(p.t1 for p in self.partials) if self.partials else 0
-        self._f0 = -1
-
-    def _sort_if_needed(self):
-        if any(p0.t0 > p1.t0 for p0, p1 in pairwise(self.partials)):
-            self.partials.sort(key=lambda p: p.t0)
+    @property
+    def t1(self):
+        t1 = self._t1
+        if t1 < 0:
+            self._t1 = t1 = max(p.t1 for p in self.partials)
+        return t1
 
     @classmethod
     def read(cls, path):
@@ -76,13 +98,15 @@ class Spectrum(object):
             self.t0, self.t1, len(self.partials))
 
     def __iter__(self):
-        # type: () -> Iterator[Partial]
+        # type: () -> Iter[Partial]
         return iter(self.partials)
 
     def __eq__(self, other):
         # type: (Spectrum) -> bool
         if not isinstance(other, Spectrum):
             raise TypeError("Can only compare to another Spectrum")
+        if self is other:
+            return True
         for partial0, partial1 in zip(self.partials, other.partials):
             if partial0 != partial1:
                 return False
@@ -92,50 +116,40 @@ class Spectrum(object):
         # type: (float) -> Spectrum
         return self.partials_between(t, t + 1e-9, crop=False)
 
-    def partials_between(self, t0, t1, crop=False):
+    def partials_between(self, t0, t1, crop=False, fade=0):
         # type: (float, float, bool) -> Spectrum
         out = []
+        if crop:
+            t0 += fade
+            t1 -= fade
         for partial in self.partials:
-            if partial.t1 >= t0 and partial.t0 <= t1:
-                if crop and (partial.t1 > t1 or partial.t0 < t0):
-                    partial = partial.crop(t0, t1)
-                out.append(partial)
             if partial.t0 > t1:
                 break
-        return Spectrum(out)
+            if partial.t1 >= t0 and partial.t0 <= t1:
+                if crop:
+                    partial = partial.crop(t0, t1)
+                if fade:
+                    partial = partial.fade(fade)
+                out.append(partial)
+
+        return Spectrum(out, skipsort=True)
 
     def partials_between_freqs(self, minfreq=0., maxfreq=24000., method="mean"):
         # type: (float, float, str) -> Spectrum
         """
-        * method: "weightedmean" --> use the weighted meanfreq.
+        * method: "weighted"     --> use the weighted meanfreq.
                   "mean"         --> use the meanfreq.
+                  "minmax"       --> use the minimum and maximum freqs.
         """
-        if method == "weightedmean":
+        if method == "weighted":
             out = [p for p in self if minfreq <= p.meanfreq_weighted < maxfreq]
         elif method == "mean":
             out = [p for p in self if minfreq <= p.meanfreq < maxfreq]
+        elif method == "minmax":
+            out = [p for p in self if minfreq < p.minfreq and maxfreq > p.maxfreq]
         else:
             raise ValueError("partials_between_freqs: method not understood")
-        return Spectrum(out)
-
-    # def harmonics(self, partial, maxharmonics=5, threshold=0.2):
-    #     assert isinstance(partial, Partial)
-    #     f0 = partial.meanfreq
-    #     possiblefreqs = [f0*i for i in range(maxharmonics)]
-    #     out = []
-    #     for candidate in self.partials_between(partial.t0, partial.t1):
-    #         if candidate.meanfreq < f0*1.5:
-    #             continue
-
-    #         t0, t1 = max(partial.t0, candidate.t0), min(partial.t1, candidate.t1)
-    #         assert t1 > t0
-    #         freqs0 = partial.freq[t0:t1:0.1]
-    #         freqs1 = candiate.freq[t0:t1:0.1]
-    #         prod = freqs1/freqs0
-    #         dev = numpy.abs(prod - prod.round()).mean()
-    #         if dev < threshold:
-    #             out.append(candidate)
-    #     return out
+        return Spectrum(out, skipsort=True)
 
     def chord_at(self, t, maxnotes=0, minamp=-50, mindur=0, minfreq=0, maxfreq=inf):
         # type: (float, int, float, float, float, float) -> music.Chord
@@ -158,17 +172,22 @@ class Spectrum(object):
         data.sort(reverse=True, key=_operator.itemgetter(1))
         if maxnotes > 0:
             data = data[:maxnotes]
-        out = music.newchord(data)
-        assert isinstance(out, music.Chord)
+        out = music.makeChord(data)
         return out
 
-    def filter(self, mindur=0, minamp=-90, minfreq=0, maxfreq=24000):
+    def filter(self, mindur=0, minamp=-90, minfreq=0., maxfreq=24000., minbps=1):
         # type: (float, float, float, float) -> Spectrum
         """
         Intended for a quick filtering of undesired partials
 
         Returns a new Spectrum with the partials satisfying 
         ALL the given conditions.
+
+        mindur: min. duration of a partial
+        minamp: min. mean amplitude (in dB) of a partial
+        minfreq: min. frequency of a partial
+        maxfreq: max. frequency of a partial
+        minbps: min. number of breakpoints of a partial
 
         SEE ALSO: filtercurve
         """
@@ -178,30 +197,32 @@ class Spectrum(object):
             if (
                 p.duration > mindur and 
                 p.meanamp > minamp and 
-                (minfreq <= p.meanfreq < maxfreq)
+                (minfreq <= p.meanfreq < maxfreq) and
+                p.numbreakpoints >= minbps
             ):
                 out.append(p)
-        return Spectrum(out)
+        return Spectrum(out, skipsort=self._sorted)
 
     def equalize(self, curve, mindb=-90):
         # type: (Bpf, float) -> Spectrum
         """
         Equalize all partials in this Spectrum
         
-        :param curve: a bpf mapping freq -> gain 
-        :param mindb: partials below this amplitude are filtered out 
-        :return: a Spectrum with the equalized partials
+        curve: a bpf mapping freq -> gain 
+        mindb: partials below this amplitude are filtered out 
+        
+        Returns a Spectrum with the equalized partials
         """
         minamp = db2amp(mindb)
         equalized = (p.equalize(curve) for p in self.partials)
         filtered = [p for p in equalized if p.meanamp > minamp]
-        return Spectrum(filtered)
+        return Spectrum(filtered, skipsort=self._sorted)
 
     def filtercurve(self, freq2minamp=None, freq2mindur=None):
-        # type: (Opt[Bpf], Opt[Bpf]) -> Tuple[Spectrum, Spectrum]
+        # type: (Opt[Bpf], Opt[Bpf]) -> Tup[Spectrum, Spectrum]
         """
         return too Spectrums, one which satisfies the given criteria, 
-        and the resisuum so that both reconstruct the original Spectrum
+        and the residuum so that both reconstruct the original Spectrum
 
         freq2minamp: a bpf mapping frequency to min. amplitude in dB
         freq2mindur: a bpf mapping frequency to min. duration
@@ -232,11 +253,11 @@ class Spectrum(object):
         """
         selected, rejected = [], []
         if freq2minamp is not None:
-            f2amp = freq2minamp.apply(db2amp)     # type: Callable[[float], float]
+            f2amp = freq2minamp.apply(db2amp)     # type: Fun1
         else:
             f2amp = lambda x:0.0
         if freq2mindur:
-            f2dur = freq2mindur.apply(db2amp) # type: Callable[[float], float]
+            f2dur = freq2mindur.apply(db2amp)     # type: Fun1
         else:
             f2dur = lambda x:0.0
         for p in self.partials:
@@ -247,41 +268,47 @@ class Spectrum(object):
                 rejected.append(p)
             else:
                 selected.append(p)
-        return Spectrum(selected), Spectrum(rejected)
+        return (Spectrum(selected, skipsort=True),
+                Spectrum(rejected, skipsort=True))
 
     def timewarp(self, timecurve):
         partials = [p.timewarp(timecurve) for p in self.partials]
-        return self.__class__(partials)
+        return Spectrum(partials, skipsort=True)
 
     def copy(self):
-        return self.__class__(self.partials[:])
-
+        """
+        We copy the partials list, since Partials themselves are inmutable
+        but the list of them is not
+        """
+        return Spectrum(self.partials.copy(), skipsort=True)
+        
     def __getitem__(self, n):
-        # TODO: support slicing
-        return self.partials[n]
-
+        if isinstance(n, list):
+            ps = self.partials
+            return Spectrum([ps[elem] for elem in n], skipsort=True)
+        out = self.partials[n]
+        if isinstance(out, list):
+            return Spectrum(out, skipsort=True)
+        else:
+            return out
+        
     def __len__(self):
         return len(self.partials)
 
     def __add__(self, other):
         # type: (Spectrum) -> Spectrum
-        partials = self.partials + other.partials
-        partials.sort(key=lambda p:p.t0)
-        return Spectrum(partials)
+        return merge(self, other)
 
-    def scaleamp(self, gain):
+    def gain(self, gain):
         # type: (float) -> Spectrum
-        partials = [p.scaleamp(gain) for p in self.partials]
-        return Spectrum(partials)
+        """
+        Example: increase the amplitude of all breakpoints by 6dB
+                 (which roughly duplicated the amplitude)
 
-    def show(self):
-        showapp = CONFIG.get('showprogram', 'spear')
-        if showapp == 'spear':
-            outfile = self._show_in_spear()
-            if outfile and os.path.exists(outfile):
-                os.remove(outfile)
-        else:
-            raise ValueError("Supported options for showprogram are 'spear'")
+        s2 = s.scaleamp(db2amp(6))
+        """
+        partials = [p.gain(gain) for p in self.partials]
+        return Spectrum(partials, skipsort=True)
 
     def edit(self):
         """ edit the spectrum with an external editor, returns
@@ -290,19 +317,16 @@ class Spectrum(object):
         NB: to perform an inplace edit, do
         s = s.edit()
         """
-        outfile = ".edit.sdif"
-        self._show_in_spear(outfile)
+        outfile = self._show_in_spear()
         if not outfile or not os.path.exists(outfile):
             raise RuntimeError("could not reload file: %s" % outfile)
         logger.info("edit: outfile is %s" % outfile)
         import time
         time.sleep(1)
-        out = readspectrum(outfile)
-        # os.remove(outfile)
-        return out
+        return readspectrum(outfile)
         
-    def plot(self, linewidth=2, downsample=1, antialias=True, exp=1, showpoints=False,
-             **kws):
+    def plot(self, linewidth=None, downsample=None, antialias=True, exp=1, showpoints=False,
+             kind='amp', pitchmode='freq', **kws):
         """
         Call the default plotting routine. For more customizations, do
         
@@ -319,14 +343,40 @@ class Spectrum(object):
              to control contrast. 
              * If exp == 0.5, week breakpoints will be more visible
              * If exp == 2, only very strong breakpoints will be visible
+        kind: 'amp' or 'bw'
+        pitchmode: 'freq' or 'note'
         """
-        from . import plot
-        plot.plot(self, linewidth=linewidth, downsample=downsample, 
-                  antialias=antialias, exp=exp, showpoints=showpoints, 
-                  **kws)
+        from .plot import plot
+        cfg = getconfig()
+        linewidth = linewidth or cfg['plot.linewidth']
+        downsample = downsample or cfg['plot.downsample']
+        return plot(self, linewidth=linewidth, downsample=downsample, 
+                    antialias=antialias, exp=exp, showpoints=showpoints, 
+                    kind=kind, pitchmode=pitchmode, **kws)
 
-    def _show_in_spear(self, filename=None):
-        spearformat = CONFIG.get('spearformat', 'sdif')
+    def show(self, method:str=None) -> None:
+        """
+        Show the spectrum. If no method is specified, it uses the
+        method in the configuration: getconfig()['spectrum.show.method']
+
+        method: None to use config, one of: "builtin", "spear"
+        """
+        if method is None:
+            config = getconfig()
+            method = config['spectrum.show.method']
+        if method == 'builtin':
+            from . import interact
+            return interact.interact(self)
+        elif method == 'spear':
+            outfile = self._show_in_spear()
+            if outfile and os.path.exists(outfile):
+                os.remove(outfile)
+        else:
+            raise ValueError("Supported options for are 'builtin' or 'spear'")
+
+    def _show_in_spear(self) -> str:
+        config = getconfig()
+        spearformat = config.get('spearformat', 'sdif')
         if filename is None:
             filename = tempfile.mktemp(suffix = "." + spearformat)
         self.write(filename)
@@ -344,20 +394,21 @@ class Spectrum(object):
         npz  : numpy zipped matrices (cross-platform, always available)
         """
         from . import io
-        funcs = {
-            '.txt': io.tospear,
-            '.hdf5': io.tohdf5,
-            '.h5': io.tohdf5,
-            '.sdif': io.tosdif,
-            '.npz': io.tonpz
-        }
         base, ext = os.path.splitext(outfile)
-        self._last_written_file = outfile
-        if ext not in funcs:
+        matrices = self.asarrays()
+        labels = self.labels()
+        if ext == '.sdif':
+            io.tosdif(matrices, labels, outfile)
+        elif ext == '.txt':
+            io.tospear(matrices, outfile)
+        elif ext == '.npz':
+            labels = self.labels()
+            io.tonpz(matrices, labels, outfile)
+        elif ext == '.hdf5' or ext == '.h5':
+            io.tohdf5(matrices, labels, outfile)
+        else: 
             raise ValueError("Format not supported")
-        matrices, labels = self.toarray()
-        return funcs[ext](matrices, labels, outfile)
-
+        
     def writesdif(self, outfile, rbep=True, fadetime=0.0):
         # type: (str, bool, float) -> None
         """
@@ -379,14 +430,28 @@ class Spectrum(object):
         io.tosdif(matrices, labels, outfile, rbep=rbep, fadetime=fadetime)
 
     def toarray(self):
-        # type: () -> Tuple[Iter[np.ndarray], List[int]]
+        # type: () -> Tup[Iter[np.ndarray], List[int]]
         """
         Returns a tuple (matrices, labels), where matrices is an list of
         matrix --> 2D array with columns [time freq amp phase bw]
         """
+        logger.warning("Deprecated: use spectrum.asarrays(), spectrum.labels() ")
+        return self.asarrays(), self.labels()
+
+    def asarrays(self):
+        # type: () -> Generator[np.ndarray]
+        """
+        Convert each partial to an array, returns a list of such arrays
+        """
         matrices = (partial.toarray() for partial in self.partials)
-        labels = [partial.label for partial in self.partials]
-        return matrices, labels
+        return matrices
+
+    def labels(self):
+        # type: () -> List[int]
+        """
+        Returns the labels (an int) of all partials, as a list
+        """
+        return [p.label for p in self.partials]
 
     def resampled(self, dt):
         # type: (float) -> Spectrum
@@ -394,8 +459,8 @@ class Spectrum(object):
         Returns a new Spectrum, resampled using dt as sampling period
         """
         partials = [p.resampled(dt) for p in self.partials]
-        return Spectrum(partials)
-
+        return Spectrum(partials, skipsort=True)
+        
     def fit_between(self, t0, t1):
         # type: (float, float) -> Spectrum
         """
@@ -407,7 +472,7 @@ class Spectrum(object):
         factor = (t1-t0) / (self.t1-self.t0)
         postoffset = t0
         return self.timescale(factor, preoffset=preoffset, postoffset=postoffset)
-        
+
     def timescale(self, factor, preoffset=0.0, postoffset=0.0):
         # type: (float, float, float) -> Spectrum
         """
@@ -416,54 +481,68 @@ class Spectrum(object):
         preoffset = -u0
         factor = (v1-v0)/(u1-u0)
         postoffset = v0
-
-        The same can be accomplished by:
-
-        (s >> preoffset).timescale(factor) >> postoffset
         """
         assert factor > 0
         newpartials = []
         for partial in self.partials:
-            times = partial.times  # type: np.ndarray
-            times += preoffset
+            times = partial.times.copy()  # type: np.ndarray
+            if preoffset != 0:
+                times += preoffset
             times *= factor
-            times += postoffset
-            # times = (partial.times + preoffset)*factor+postoffset
-            newpartials.append(partial.clone(times=times))
-        return self.__class__(newpartials)
+            if postoffset != 0:
+                times += postoffset
+            partial2 = partial.clone(times=times)
+            newpartials.append(partial2)
+        return Spectrum(newpartials, skipsort=True)
 
     def freqwarp(self, curve):
-        # type: (Callable[[float], float]) -> Spectrum
+        # type: (Fun1) -> Spectrum
         """
         curve: maps freq to freq
         """
-        return Spectrum([p.freqwarp(curve) for p in self.partials])
+        return Spectrum([p.freqwarp(curve) for p in self.partials], skipsort=True)
 
     def freqwarp_dynamic(self, gradient):
-        # type: (Callable[[float, float], float]) -> Spectrum
+        # type: (Fun[[float, float], float]) -> Spectrum
         """
         gradient: a callable of the form gradient(t, f) -> f
         """
-        return Spectrum([p.freqwarp_dynamic(gradient) for p in self.partials])
+        return Spectrum([p.freqwarp_dynamic(gradient) for p in self.partials], 
+                        skipsort=True)
 
+    def transpose(self, interval):
+        # type: (U[float, Fun1]) -> Spectrum
+        partials = [p.transpose(interval) for p in self.partials]
+        return Spectrum(partials, skipsort=True)
+    
     def shifted(self, dt=0, df=0):
-        # type: (float, float) -> Spectrum
+        # type: (float, U[float, Fun1], U[float, Fun1]) -> Spectrum
         """
-        Return a new Spectrum shifted in time and/or freq. 
+        Return a new Spectrum shifted in time and/or freq. Alternatively to `df`,
+        `interval` sets a transposition interval in semitones (can be dynamic)
 
         dt: a constant time
-        df: either a constant or dynamic (bpf) frequency
+        df: all frequencies are shifted by this ammount (a scalar or a bpf)
         """
+        if df and interval:
+            raise ValueError("either `df` or `interval` can be set at one time")
         partials = [p.shifted(dt=dt, df=df) for p in self.partials]
-        return Spectrum(partials)
+        return Spectrum(partials, skipsort=True)
 
     def __lshift__(self, secs):
-        return self.shifted(-secs)
+        return self.shifted(dt=-secs)
 
     def __rshift__(self, secs):
-        return self.shifted(secs)
+        return self.shifted(dt=secs)
 
-    def synthesize(self, samplerate=44100, outfile=""):
+    @lru_cache(maxsize=10)
+    def _synthesize(self, samplerate:int, start:float, end:float, method=None):
+        from . import synthesis
+        return synthesis.render_samples(self, samplerate, start=start, end=end, 
+                                        method=method)
+        
+    def synthesize(self, sr:int=44100, start:float=-1, end:float=-1
+                   ) -> audiosample.Sample:
         # type: (int, str) -> np.ndarray
         """
         Synthesize this Spectrum
@@ -475,19 +554,55 @@ class Spectrum(object):
                    wav, aif  -> flt32
                    flac      -> int24
 
-        Returns: the samples as numpy array
+        To write the samples to disk:
+
+        spectrum.synthesize(sr=44100).write("out.wav")    
         """
-        matrices, labels = self.toarray()
-        samples = io.synthesize(matrices, samplerate)
-        if outfile:
-            io.sndwrite(samples, samplerate, outfile)
-        return samples
+        if start < 0: 
+            start = self.t0
+        if end < 0: 
+            end = self.t1
+        samples = self._synthesize(sr, start=start, end=end)
+        return audiosample.Sample(samples, sr)
 
-    def tosample(self, samplerate=44100):
-        from emlib.snd import audiosample
-        samples = self.synthesize(samplerate)
-        return audiosample.Sample(samples, samplerate)
+    def render(self, sndfile:str, sr:int=44100, start:float=-1, end:float=-1) -> None:
+        """
+        Render this spectrum as a soundfile to disk
 
+        This is in theory the same as spectrm.synthesize(sr).write("sndfile.wav"),
+        but it is recommended since the backend can then decide if it is more
+        efficient to generate the samples directly to disk.
+
+        To configure the synthesis method, see getconfig()['render.method']
+        """
+        from . import synthesis
+        return synthesis.render_sndfile(self, sr=sr, outfile=sndfile, start=start, end=end)
+
+    def play(self, start=-1, end=0, loop=False, speed=1, play=True, gain=1):
+        # type: (float, float, bool, float) -> synthesis.SpectrumPlayer
+        """
+        Play the spectrum in real-time. Returns a SpectrumPlayer, 
+        which can be controlled while sound is playing
+
+        start: start time. A negative number will start at the beginning of the spectrum
+               (skipping any silence before t=0)
+        end: end time. A negative will count time from the end
+        loop: if True, loop between start and end
+        speed: Playback speed. NB: 0 freezes the sound.
+        play: if True, start playing right away.
+        """
+        from . import synthesis
+        if start < 0:
+            start = self.t0
+        if end <= 0:
+            end = self.t1 - end
+        verbose = logger.level == logging.DEBUG
+        player = synthesis.SpectrumPlayer(self, autoplay=play, looping=loop,
+                                          speed=speed, start=start, end=end,
+                                          exitwhendone=(not loop), interactive=True,
+                                          gain=gain, verbose=verbose)
+        return player
+        
     def estimatef0(self, minfreq, maxfreq, interval=0.1):
         # type: (float, float, float) -> io.EstimateF0
         """
@@ -503,25 +618,60 @@ class Spectrum(object):
                     Values of 0.9-1 represent high confidence, 0 represents no partial
                     at time `t`, values in between represent unvoiced sounds 
         """
-        if self._f0 is not None:
+        if self._f0 > 0:
             return self._f0
         matrices, labels = self.toarray()
         self._f0 = io.estimatef0(matrices, minfreq, maxfreq, interval)
         return self._f0
 
-    def normalize(self, maxpeak=1):
+    def normalize(self, maxpeak):
         # type: (float) -> Spectrum
-        maxamp = max(p.amps.max() for p in self.partials)
-        ratio = maxpeak / maxamp
-        partials = [p.scaleamp(ratio) for p in self.partials]
-        return self.__class__(partials)
+        """
+        Normalize all partials based on the maximum amp. value of
+        this spectrum. 
+
+        Example: normalize a spectrum so that it does not clip
+
+        samples = s.synthesize(s2, 22000)
+        maxpeak = np.abs(samples).max()
+        s2 = s.normalize
+        """
+        raise NotImplementedError
 
     def simplify(self, pitchdelta=0.01, dbdelta=0.1, bwdelta=0.01):
         # type: (float, float, float) -> Spectrum
-        """ Simplify each partial """
+        """ 
+        Simplify each partial 
+
+        pitchdelta: min. difference in semitones
+        dbdetal: min. difference in dBs
+        bwdelta: min. difference in bandwidth
+        """
         newpartials = [p.simplify(pitchdelta=pitchdelta, dbdelta=dbdelta, bwdelta=bwdelta)
                        for p in self]
-        return Spectrum(newpartials)
+        return Spectrum(newpartials, skipsort=True)
+
+    def estimate_breakpoint_gap(self, percentile=None, partial_percentile=None):
+        # type: (float, float) -> float
+        """
+        Estimate the breakpoint gap in this spectrum. 
+        
+        To configure the defaults, see keys: 'breakpointgap.percentile' and 
+        'breakpointgap.partial_percentile'
+        """
+        cfg = getconfig()
+        percentile = percentile if percentile is not None else cfg['breakpointgap.percentile']
+        partial_percentile = partial_percentile if partial_percentile is not None else \
+                             cfg['breakpointgap.partial_percentile']
+        return _estimate_gap(self, percentile=percentile, partial_percentile=partial_percentile)
+        
+
+@lru_cache(maxsize=128)
+def _estimate_gap(sp:Spectrum, percentile:int, partial_percentile:int):
+    values = [p.estimate_breakpoint_gap(partial_percentile) for p in sp.partials
+              if p.numbreakpoints > 2]
+    value = np.percentile(values, percentile)
+    return value
 
 
 # <--------------------------------- END Spectrum
@@ -538,15 +688,13 @@ def fromarray(arrayseq, labels=None):
     newpartials = []
     if labels is None:
         labels = [0] * len(arrayseq)
+    minbreakpoints = getconfig()['spectrum.minbreakpoints']
     for matrix, label in zip(arrayseq, labels):
-        times = matrix[:, 0]
-        if len(times) < 1 or times[-1] - times[0] <= 0:
-            logger.debug("skipping short partial")
+        if len(matrix) < minbreakpoints:
+            logger.debug(f"fromarray: Skipping short partial of #bps={len(matrix)}")
             continue
         newpartials.append(Partial.fromarray(matrix, label=label))
     return Spectrum(newpartials)
-
-
 
 
 def merge(*spectra):

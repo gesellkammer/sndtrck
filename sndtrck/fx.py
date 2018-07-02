@@ -1,10 +1,8 @@
 from __future__ import absolute_import
 # from em.pitchtools import db2amp, m2f, f2m
-import numpy as np
 from emlib.pitch import db2amp, m2f, f2m
 import bpf4 as bpf
 from . import spectrum as sp
-from . import accel
 from typing import Callable
 
 
@@ -63,5 +61,4 @@ def transpose_dynamic(spectrum, curve):
         f2 = m2f(f2m(f) + semitones)
         return f2
     return spectrum.freqwarp_dynamic(gradient)
-
 

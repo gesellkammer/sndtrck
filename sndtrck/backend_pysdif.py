@@ -1,22 +1,30 @@
 import numpy as np
 import pysdif
 import array
-from .log import get_logger
-logger = get_logger()
+import logging
+
+logger = logging.getLogger("sndtrck")
+
 
 try:
     import pysdif
     pysdif.sdif_init()
     AVAILABLE = True
-    logger.info("pysdif backend found")
+    logger.debug("pysdif backend found")
 except ImportError:
-    logger.info("pysdif backend not found")
+    logger.warning("pysdif backend not found")
     AVAILABLE = False
     
 
 def is_available():
     # type: () -> bool
     return AVAILABLE
+
+
+def aslist(l):
+    if isinstance(l, list):
+        return l
+    return list(l)
 
 
 def get_info():
@@ -31,17 +39,70 @@ def get_info():
     }
 
 
-def write_sdif(matrices, labels, outfile, rbep=True, fadetime=0):
+def write_sdif(outfile, matrices, labels=None, rbep=True, fadetime=0):
     if rbep:
-        return write_rbep(matrices, labels, outfile)
+        return write_rbep(outfile, matrices, labels)
     else:
         logger.error("1TRC is not supported yet")
         return False
 
 
-def write_rbep(matrices, labels, outfile):
+def read_sdif(infile):
+    s = pysdif.SdifFile(infile)
+    sig = s.signature
+    if sig == b"RBEP":
+        return _read_rbep(s)
+    elif sig == b"1TRK":
+        return _read_1trck(s)
+    else:
+        raise IOError(f"Sdiffile with unknown signature: {sig}")
+
+
+def _read_1trck(sdif):
+    raise NotImplementedError("!!")
+
+
+def _read_rbep(sdif):
+    RBEP = pysdif.str2signature(b"RBEP")  # type: int
+    prepartials = {}
+    for frame in sdif:
+        if frame.numerical_signature == RBEP:
+            t = frame.time 
+            sig, data = frame.get_matrix()
+            for i in range(data.shape[0]):
+                row = data[i]
+                idx = int(row[0])
+                row[5] += t   # offset + frametime
+                p = prepartials.get(idx)
+                if p:
+                    p.append(row)
+                else:
+                    prepartials[idx]= [row]
+        else:
+            logger.debug(f"Skipping frame with signature: {frame.signature}")
+    sdif.close()
+    matrices = []
+    for rows in prepartials.values():
+        assert isinstance(rows, list)
+        mtx = np.stack(rows)
+        # N F A P B T -> T F A P B
+        mtx[:,0] = mtx[:,5]
+        mtx = mtx[:,:5]
+        matrices.append(mtx)
+    return matrices
+
+
+def write_rbep(outfile, matrices, labels, rbep=True, **kws):
     # TODO: save labels
+    matrices = aslist(matrices)
+    assert isinstance(outfile, str)
+    assert isinstance(matrices, list)
+    assert isinstance(matrices[0], np.ndarray)
+    assert isinstance(labels, list) or labels is None
+    assert isinstance(rbep, bool)
+    logger.debug("opening %s" % outfile)
     sdif = pysdif.SdifFile(outfile, "w")
+    logger.debug("adding type")
     sdif.add_predefined_frametype(b"RBEP")
     numbps = [len(m) for m in matrices]
     sumbps = sum(numbps)
@@ -75,6 +136,7 @@ def write_rbep(matrices, labels, outfile):
         t = arr[bpidx, 0]
         if present[idx]:
             matrix = bigmatrix[:rowidx+1]
+            logger.debug("writing matrix")
             sdif.new_frame_one_matrix("RBEP", frametime, "RBEP", matrix)
             frametime = t
             rowidx = 0
@@ -82,6 +144,7 @@ def write_rbep(matrices, labels, outfile):
         else:
             present[idx] = 1
             rowidx += 1
+        assert rowidx < N
         bigmatrix[rowidx, 0] = idx
         bigmatrix[rowidx, 1] = arr[bpidx, 1]
         bigmatrix[rowidx, 2] = arr[bpidx, 2]
@@ -90,4 +153,5 @@ def write_rbep(matrices, labels, outfile):
         bigmatrix[rowidx, 5] = t - frametime
     matrix = bigmatrix[:rowidx+1]    
     sdif.new_frame_one_matrix("RBEP", frametime, "RBEP", matrix)
+    logger.debug("closing")
     sdif.close()

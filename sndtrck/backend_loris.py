@@ -22,26 +22,21 @@ get_info() --> dict
                }
 
 """
-from __future__ import absolute_import
-import warnings as _warnings
 import numpy as np
 from .errors import BackendNotAvailable
-from .util import isiterable, sndreadmono, aslist
+from .util import isiterable, sndreadmono
 import bpf4 as bpf
-from typing import Iterable as Iter, Optional as Opt, List, Tuple as Tup, Union
-from .log import get_logger
+from typing import Iterable as Iter, Optional as Opt, List, Tuple as Tup, Union as _U
 import logging
 
-logger = get_logger()
+logger = logging.getLogger("sndtrck")
 
 try:
     import loristrck
     AVAILABLE = True
-    logger.info("backend loristrck OK")
-    loristrck.logger.setLevel(logging.INFO)
+    logger.debug("backend loristrck OK")
 except ImportError:
-    _warnings.warn("loristrck is not available, the loris backend cannot be used")
-    logger.info("backend loristrck not found!")
+    logger.error("backend loristrck not found!")
     AVAILABLE = False
     loristrck = None
 
@@ -78,31 +73,21 @@ def _default(val, default):
     return val if val is not None else default
 
 
-def analyze_samples(samples,    # type: np.ndarray
-                    sr,         # type: int
-                    resolution, # type: float
-                    windowsize=None,  # type: Opt[float]
-                    hop=None,         # type: Opt[float]
-                    freqdrift=None,   # type: Opt[float]
-                    sidelobe=None,    # type: Opt[float]
-                    ampfloor=None,    # type: Opt[float]
-                    croptime=None     # type: Opt[float]
+def analyze_samples(samples,             # type: np.ndarray
+                    sr,                  # type: int
+                    resolution,          # type: float
+                    windowsize=None,     # type: Opt[float]
+                    hop=None,            # type: Opt[float]
+                    freqdrift=None,      # type: Opt[float]
+                    sidelobe=None,       # type: Opt[float]
+                    ampfloor=None,       # type: Opt[float]
+                    croptime=None,       # type: Opt[float]
+                    residuebw=None,      # type: Opt[float]
+                    convergencebw=None,  # type: Opt[float]
     ):
     # type: (...) -> List[np.ndarray]
     """
-    Partial tracking analysis
-    
-    :param samples: the samples to analyze
-    :param sr: sampling rate
-    :param resolution: resolution of the analysis in Hz
-    :param windowsize: size of the analysis window **in Hz**
-    :param hop: hoptime, as a fraction of a window (sensible values: 1/8 to 1)
-    :param freqdrift: max. drift in freq between 2 breakpoints (a normal default is 1/2 of the resolution)
-    :param sidelobe: shape of the kaiser window (in +dB)
-    :param ampfloor: only breakpoints above this amplitude are kept for partial tracking
-    :param croptime: max. time correction between 2 breakpoints
-    :return: a list of numpy arrays, where each array represents a partial
-             The shape of each array is (numbreakpoints, 5), with columns: time, freq, amp, phase and bw
+    For documentation, see analyze
     """
     if not AVAILABLE:
         raise BackendNotAvailable("loristrck not available")
@@ -113,59 +98,111 @@ def analyze_samples(samples,    # type: np.ndarray
     windowsize = _default(windowsize, 2*resolution)
     croptime = _default(croptime, -1)
     hop = _default(hop, 1)
+    residuebw = _default(residuebw, -1)
+    convergencebw = _default(convergencebw, -1)
     hoptime = (1.0 / windowsize) * hop  # originl Loris behaviour is hop=1
-    logger.info("analyze_samples: using windowsize = {}".format(windowsize))
+    logger.debug("analyze_samples: using windowsize = {}".format(windowsize))
     partialdata = loristrck.analyze(samples, sr, resolution, windowsize,
                                     hoptime=hoptime, freqdrift=freqdrift, sidelobe=sidelobe,
-                                    ampfloor=ampfloor, croptime=croptime)
+                                    ampfloor=ampfloor, croptime=croptime,
+                                    residuebw=residuebw, convergencebw=convergencebw)
     return partialdata
 
 
-def analyze(sndfile,          # type: Union[str, Tup[np.ndarray, int]]
-            resolution,       # type: float
-            windowsize=None,  # type: Opt[float]
-            hop=None,         # type: Opt[float]
-            freqdrift=None,   # type: Opt[float]
-            sidelobe=None,    # type: Opt[float]
-            ampfloor=None,    # type: Opt[float]
-            croptime=None,    # type: Opt[float]
-            channel=1         # type: int
-    ):
-    # type: (...) -> List[np.ndarray]
+def analyze(sound,               # type: _U[str, Tup[np.ndarray, int]]
+            resolution,          # type: float
+            windowsize=None,     # type: Opt[float]
+            hop=None,            # type: Opt[float]
+            freqdrift=None,      # type: Opt[float]
+            sidelobe=None,       # type: Opt[float]
+            ampfloor=None,       # type: Opt[float]
+            croptime=None,       # type: Opt[float]
+            residuebw=None,      # type: Opt[float]
+            convergencebw=None,  # type: Opt[float]
+            channel=0,           # type: int
+            start=0.0,
+            end=0.0):   # type: (...) -> List[np.ndarray]
     """
     Partial tracking analysis
     
-    :param sndfile: the path to a soundfile, or a tuple(samples, samplerate) 
-    :param resolution: the resolution of the analysis, in Hz
-    :param windowsize: size of the analysis window **in Hz**
-    :param hop: hoptime, as a fraction of a window (sensible values: 1/8 to 1)
-    :param freqdrift: max. drift in freq between 2 breakpoints (a normal default is 1/2 of the resolution)
-    :param sidelobe: shape of the kaiser window (in +dB)
-    :param ampfloor: only breakpoints above this amplitude are kept for partial tracking
-    :param croptime: max. time correction between 2 breakpoints
-    :param channel: the channel to use for analysis if given a stereo file. 
-    :return: a list of numpy arrays, where each array represents a partial
-             The shape of each array is (numbreakpoints, 5), with columns: time, freq, amp, phase and bw
+    sound: str or (samples, samplerate)
+        the path to a soundfile, or a tuple(samples, samplerate) 
+    resolution: Hz
+        The resolution of the analysis, in Hz
+        Only one partial will be found within this distance. Usual values range 
+        from 30 Hz to 200 Hz. As a rule of thumb, when tracking a monophonic source, 
+        resolution ~= min(f0) * 0.9 
+    windowsize: Hz
+        size of the analysis window. If not given, windowsize=2*resolution. It should not
+        excede this value, but it can be smaller. The windowsize is inverse to its length
+        in samples (see loristrck.kaiserWindowLength) 
+    hop: 
+        hoptime, as a fraction of a the windowsize. The normal hoptime is 1/windowsize,
+        so a hop time of 2 will double that. Most of the times this should be left
+        untouched (sensible values: 1/4 to 4). At its default, this results in an
+        overlap of ~8x
+    freqdrift:  
+        max. drift in freq between 2 breakpoints (default is 1/2 of the resolution)
+        A sensible value is between 1/2 to 3/4 of resolution
+    sidelobe: dB
+        shape of the kaiser window (in +dB)
+    ampfloor: dB
+        only breakpoints above this amplitude are kept for partial tracking
+    croptime: sec
+        max. time correction between 2 breakpoints (defaults to hop time)
+    channel: int
+        the channel to use for analysis if given a stereo file.
+    residuebw: Hz (default = 2000 Hz)
+        Bandwidth env. is created by associating residual energy to 
+        the peaks. The value indicates the width of association regions used.
+        Defaults to 2 kHz, corresponding to 1 kHz region center spacing.
+        NB: if residuebw is set, convergencebw must be left unset
+    convergencebw: range [0, 1]
+        Bandwidth env. is created by storing the mixed derivative of short-time 
+        phase, scaled and shifted. The value is the amount of range over which the 
+        mixed derivative is allowed to drift away from a pure sinusoid 
+        before saturating. This range is mapped to bandwidth values on 
+        the range [0,1].  
+        NB: one can set residuebw or convergencebw, but not both 
+    start, end: 
+        Read a portion of the soundfile. For end, use negative times to count
+        from the end
+    
+    Returns: a list of numpy arrays, where each array represents a partial
+             The shape of each array is (numbreakpoints, 5), with columns: 
+             time, freq, amp, phase, bw
     """
-    if isinstance(sndfile, str):
-        samples, sr = sndreadmono(sndfile, channel)
-    elif isinstance(sndfile, tuple):
-        samples, sr = sndfile
+    if isinstance(sound, str):
+        samples, sr = sndreadmono(sound, channel, start=start, end=end)
+    elif isinstance(sound, tuple):
+        samples, sr = sound
+        assert isinstance(samples, np.ndarray)
+        if len(samples.shape) > 1:
+            logger.error("Multichannel sound found, using channel 0")
+            samples = samples[:,0]
     else:
-        raise TypeError("sndfile should be either a string path to a soundfile or a tuple(samples, sr)")
-    samples = np.ascontiguousarray(samples)
-    return analyze_samples(samples, sr, resolution, windowsize, hop,
+        raise TypeError("sound should be a path or a tuple(samples, sr)")
+    if not samples.flags.contiguous:
+        samples = np.ascontiguousarray(samples)
+    return analyze_samples(samples, sr=sr, resolution=resolution, windowsize=windowsize, hop=hop,
                            freqdrift=freqdrift, sidelobe=sidelobe, ampfloor=ampfloor,
-                           croptime=croptime)
+                           croptime=croptime, residuebw=residuebw, convergencebw=convergencebw)
 
 
-def synthesize(matrices, samplerate=44100, fadetime=None):
-    # type: (Iter[np.ndarray], int, Opt[float]) -> np.ndarray[float]
+def synthesize(matrices: Iter[np.ndarray],
+               samplerate=44100,
+               fadetime: float=None,
+               start: float=0,
+               end: float=0) -> np.ndarray:
     """
     Returns a numpy 1D array holding the samples 
     
     matrices: a seq. of 2D matrices, where each matrix represents a partial
-
+    samplerate: the samplerate of the synthesized sampled
+    fadetime: apply this fadetime to each partial to avoid clicks
+    start, end: start and end time of synthesis. Leave both in 0 to synthesize all
+    
+    
     Example:
 
     matrices = analyze("path/to/sound", ...)
@@ -179,7 +216,7 @@ def synthesize(matrices, samplerate=44100, fadetime=None):
     if fadetime is None:
         # 32 samples ramp
         fadetime = 32./samplerate
-    samples = loristrck.synthesize(matrices, samplerate, fadetime)
+    samples = loristrck.synthesize(matrices, samplerate, fadetime, start=start, end=end)
     return samples
 
 
@@ -202,16 +239,21 @@ def read_sdif(sdiffile):
     return partials, labels
 
 
-def write_sdif(matrices, outfile, labels=None, rbep=True, fadetime=0):
-    # type: (Iter[np.ndarray], str, Opt[Iter[int]], bool, float) -> None
+def write_sdif(outfile, matrices, labels=None, rbep=True, fadetime=0):
+    # type: (str, Iter[np.ndarray], Opt[Iter[int]], bool, float) -> None
     """
-    matrices: a seq. of 2D numpy arrays where each matrix represents a partial.
-              Partial: rows represent breakpoints, each breakpoint has the form
-              [time, freq, amp, phase, bw]
-    labels: if given, a list of numeric labels, one for each partial (len(matrices) == len(labels))
-    rbep: if True, use the RBEP format. Otherwise, the 1TRC format is used
-    fadetime: fade the partials to 0 if they end in non-0 amplitude, to avoid clicks when
-              synthesizing (a fadetime of 0 disables fading)
+    matrices: 
+        a seq. of 2D numpy arrays where each matrix represents a partial.
+        Partial: rows represent breakpoints, each breakpoint has the form
+        [time, freq, amp, phase, bw]
+    labels: 
+        if given, a list of numeric labels, one for each partial 
+        NB: len(matrices) == len(labels)
+    rbep: 
+        if True, use the RBEP format. Otherwise, the 1TRC format is used
+    fadetime: 
+        fade the partials to 0 if they end in non-0 amplitude, to avoid clicks when
+        synthesizing (a fadetime of 0 disables fading)
     """
     assert isinstance(outfile, str)
     assert isiterable(matrices)
@@ -227,13 +269,20 @@ def estimatef0(matrices, minfreq=30, maxfreq=3000, interval=0.1):
     """
     Estimate the funamental freq. of the analysed partials
     
-    :param matrices: a seq. of 2D numpy arrays where each matrix represents a partial, as
-                     returned by `analyze` 
-    :param minfreq: the min. frequency to look for f0
-    :param maxfreq: the max. frequency to look to f0
-    :param interval: the time interval at which the f0 is estimated
-    :return: a tuple(freq, conf), both a bpf. freq represents the freq of the f0 at time t,
-             conf is a curve representing the confidence of the measurement at time t
+    matrices: 
+        a seq. of 2D numpy arrays where each matrix represents a partial, as
+        returned by `analyze` 
+    minfreq: 
+        the min. frequency to look for f0
+    maxfreq: 
+        the max. frequency to look to f0
+    interval: 
+        the time interval at which the f0 is estimated
+    
+    Returns:
+        a tuple(freq, conf), both a bpf. 
+        freq represents the freq of the f0 at time t,
+        conf is a curve representing the confidence of the measurement at time t
     """
     freqs, confs, t0, t1 = loristrck.estimatef0(matrices, minfreq, maxfreq, interval)
     freqbpf = bpf.core.Sampled(freqs, interval, t0)

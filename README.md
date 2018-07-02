@@ -89,3 +89,7 @@ Go to [trnscrb] for automatic transcription of spectra into musical notation
 [pandas]: http://pandas.pydata.org/
 [trnscrb]: https://github.com/gesellkammer/trnscrb
 [pyqtgraph]: http://pyqtgraph.org
+
+# License
+
+GNU 

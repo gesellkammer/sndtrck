@@ -8,3 +8,5 @@ sndtrck/old
 __pycache__
 *.egg-info
 report.html
+.idea
+setup-accel.py

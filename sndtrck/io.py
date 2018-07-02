@@ -1,17 +1,14 @@
-from __future__ import absolute_import
-from __future__ import print_function
-import os
 import warnings
 import subprocess as _subprocess
 import platform as _platform
 import numpy as np
 from collections import namedtuple
+import logging
 
 from . import backend_loris
 from . import backend_pysdif
 
 from .errors import *
-from . import log as _log
 from .util import *
 import bpf4 as bpf
 from typing import Iterable as I, Optional as Opt, Tuple as Tup, List
@@ -35,7 +32,7 @@ level higher
 For soundfile io, use sndfileio directly
 """
 
-_logger = _log.get_logger()
+logger = logging.getLogger("sndtrck")
 
 
 def tosdif(matrices, labels, outfile, rbep=True, fadetime=0):
@@ -48,14 +45,13 @@ def tosdif(matrices, labels, outfile, rbep=True, fadetime=0):
               last breakpoint has an amplitude > 0
     """
     outfile = normalizepath(outfile)
-    backends = [backend_pysdif, backend_loris]
+    # backends = [backend_pysdif, backend_loris]
+    backends = [backend_loris]
     backends = [b for b in backends if b.is_available() and b.get_info()['write_sdif']]
     if not backends:
         raise FunctionalityNotAvailable("no backend implements writing to sdif")
     backend = backends[0]
-    # info = backend.get_info()
-    # _logger.info("tosdif: using backend {}".format(info['name']))
-    return backend.write_sdif(matrices, outfile, labels=labels, rbep=rbep, fadetime=fadetime)
+    return backend.write_sdif(outfile, matrices, labels=labels, rbep=rbep, fadetime=fadetime)
 
 
 def fromsdif(sdiffile):
@@ -106,7 +102,7 @@ def fromtxt(path):
             for _ in range(10):
                 same = times[1:] - times[:-1] == 0   # type: np.ndarray
                 if same.any():
-                    _logger.warn("duplicate points found")
+                    logger.warning("duplicate points found")
                     times[1:][same] += EPSILON
                 else:
                     break
@@ -120,7 +116,7 @@ def fromtxt(path):
             skipped += 1
         npartials -= 1
     if skipped:
-        _logger.warn("Skipped %d partials without duration" % skipped)
+        logger.warning("Skipped %d partials without duration" % skipped)
     return matrices, labels
 
 
@@ -194,7 +190,7 @@ def fromnpz(path):
         matrices = [None] * int(metadata[b'numpartials'])  # type: List[Opt[np.ndarray]]
         partialprefix = metadata[b'partialprefix'].decode("ascii")
         skip = len(partialprefix)
-        for key, value in npz.iteritems():
+        for key, value in npz.items():
             if key.startswith(partialprefix):
                 idx = int(key[skip:])
                 matrices[idx] = value
@@ -204,6 +200,7 @@ def fromnpz(path):
     return matrices, labels
 
 
+# noinspection PyUnresolvedReferences
 def tohdf5(matrices, labels, outfile):
     # type: (I[np.ndarray], I[int], str) -> None
     """
@@ -225,7 +222,11 @@ def tohdf5(matrices, labels, outfile):
     where each partial is a matrix with the given columns
 
     """
-    import h5py
+    try:
+        import h5py
+    except ImportError:
+        raise ImportError("can't use h5 backend, h5py not available")
+
     f = h5py.File(outfile, "w", libver='latest')
     columns = "time freq amp phase bw"
     labellist = aslist(labels)  # type: List[int]
@@ -247,6 +248,7 @@ def tohdf5(matrices, labels, outfile):
     f.close()
 
 
+# noinspection PyUnresolvedReferences
 def fromhdf5(path):
     # type: (str) -> Tup[List[np.ndarray], List[int]]
     """
@@ -288,7 +290,6 @@ def fromhdf5(path):
     store.close()
     return matrices, labels
 
-
 def synthesize(matrices, samplerate=44100):
     # type: (I[np.ndarray], int) -> np.ndarray
     """
@@ -299,6 +300,8 @@ def synthesize(matrices, samplerate=44100):
     NB: to synthesize part of the Spectrum, call
         spectrum.partials_between(start, end, crop=True)
     """
+    logger.warning("Deprecated, use synthesis.synthesize directly")
+
     for backend in [backend_loris]:
         if backend.is_available() and backend.get_info().get('synthesize', False):
             return backend.synthesize(matrices, samplerate)
@@ -379,3 +382,4 @@ def open_spectrum_in_spear(filepath, wait=True):
     }.get(_platform.system())
     if f:
         f(filepath)
+
