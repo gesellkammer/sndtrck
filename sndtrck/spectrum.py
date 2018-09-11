@@ -11,13 +11,22 @@ from .config import getconfig
 from .util import *
 from .partial import Partial
 from . import music
-from .typehints import Dict, List, Iter, Tup, Opt, Fun1
+from . import typehints as t
 
 
 Bpf = bpf.BpfInterface
 inf = float("inf")
 
 logger = logging.getLogger("sndtrck")
+
+__all__ = [
+    'Spectrum',
+    'fromarray',
+    'merge',
+    'readspectrum',
+    'concat',
+    'logger'
+]
 
 
 #######################################################################
@@ -28,7 +37,7 @@ logger = logging.getLogger("sndtrck")
 
 
 class Spectrum(object):
-    def __init__(self, partials:Iter[Partial], *,
+    def __init__(self, partials:t.Iter[Partial], *,
                  skipsort=False, packed=False):
         """
         partials: a seq. of Partial (can be a generator).
@@ -98,7 +107,7 @@ class Spectrum(object):
             self.t0, self.t1, len(self.partials))
 
     def __iter__(self):
-        # type: () -> Iter[Partial]
+        # type: () -> t.Iter[Partial]
         return iter(self.partials)
 
     def __eq__(self, other):
@@ -219,7 +228,7 @@ class Spectrum(object):
         return Spectrum(filtered, skipsort=self._sorted)
 
     def filtercurve(self, freq2minamp=None, freq2mindur=None):
-        # type: (Opt[Bpf], Opt[Bpf]) -> Tup[Spectrum, Spectrum]
+        # type: (t.Opt[Bpf], t.Opt[Bpf]) -> t.Tup[Spectrum, Spectrum]
         """
         return too Spectrums, one which satisfies the given criteria, 
         and the residuum so that both reconstruct the original Spectrum
@@ -253,11 +262,11 @@ class Spectrum(object):
         """
         selected, rejected = [], []
         if freq2minamp is not None:
-            f2amp = freq2minamp.apply(db2amp)     # type: Fun1
+            f2amp = freq2minamp.apply(db2amp)     # type: t.Func1
         else:
             f2amp = lambda x:0.0
         if freq2mindur:
-            f2dur = freq2mindur.apply(db2amp)     # type: Fun1
+            f2dur = freq2mindur.apply(db2amp)     # type: t.Func1
         else:
             f2dur = lambda x:0.0
         for p in self.partials:
@@ -430,7 +439,7 @@ class Spectrum(object):
         io.tosdif(matrices, labels, outfile, rbep=rbep, fadetime=fadetime)
 
     def toarray(self):
-        # type: () -> Tup[Iter[np.ndarray], List[int]]
+        # type: () -> t.Tup[t.Iter[np.ndarray], t.List[int]]
         """
         Returns a tuple (matrices, labels), where matrices is an list of
         matrix --> 2D array with columns [time freq amp phase bw]
@@ -447,7 +456,7 @@ class Spectrum(object):
         return matrices
 
     def labels(self):
-        # type: () -> List[int]
+        # type: () -> t.List[int]
         """
         Returns the labels (an int) of all partials, as a list
         """
@@ -496,7 +505,7 @@ class Spectrum(object):
         return Spectrum(newpartials, skipsort=True)
 
     def freqwarp(self, curve):
-        # type: (Fun1) -> Spectrum
+        # type: (t.Func1) -> Spectrum
         """
         curve: maps freq to freq
         """
@@ -511,12 +520,12 @@ class Spectrum(object):
                         skipsort=True)
 
     def transpose(self, interval):
-        # type: (U[float, Fun1]) -> Spectrum
+        # type: (U[float, t.Func1]) -> Spectrum
         partials = [p.transpose(interval) for p in self.partials]
         return Spectrum(partials, skipsort=True)
     
     def shifted(self, dt=0, df=0):
-        # type: (float, U[float, Fun1], U[float, Fun1]) -> Spectrum
+        # type: (float, U[float, t.Func1], U[float, t.Func1]) -> Spectrum
         """
         Return a new Spectrum shifted in time and/or freq. Alternatively to `df`,
         `interval` sets a transposition interval in semitones (can be dynamic)
@@ -678,7 +687,7 @@ def _estimate_gap(sp:Spectrum, percentile:int, partial_percentile:int):
 
 
 def fromarray(arrayseq, labels=None):
-    # type: (List[np.ndarray], Opt[List[int]]) -> Spectrum
+    # type: (t.List[np.ndarray], t.Opt[t.List[int]]) -> Spectrum
     """
     construct a Spectrum from array data
 
@@ -710,7 +719,7 @@ def merge(*spectra):
 
 
 def concat(spectra, separator=0, strip=True):
-    # type: (List[Spectrum], float, bool) -> Spectrum
+    # type: (t.List[Spectrum], float, bool) -> Spectrum
     """
     Concatenate (juxtapose) multiple spectra
 
@@ -729,7 +738,7 @@ def concat(spectra, separator=0, strip=True):
         if isinstance(separator, (int, float)):
             t += separator
         return t
-    partials = []  # type: List[Partial]
+    partials = []  # type: t.List[Partial]
     now = 0
     for spectrum in spectra[:-1]:
         now = addspectrum(partials, spectrum, now, strip, separator)
@@ -778,14 +787,7 @@ def harmonicdev(f0, partial):
 
     TODO: take correlation into account
     """
-    t0 = max(f0.t0, partial.t0)
-    t1 = min(f0.t1, partial.t1)
-    if t1 < t0:
-        raise ValueError("partial and f0 should intersect in time")
-    dt = (t1 - t0) / 100
-    freqs0 = f0.freq[t0:t1:dt]
-    freqs1 = partial.freq[t0:t1:dt]
-    prod = freqs1/freqs0
-    dev = np.abs(prod - prod.round()).mean()
-    return dev
+    logger.warn("Depcreted. Use Partial.harmonicdev")
+    return partial.harmonicdev(f0)
+
 

@@ -1,16 +1,21 @@
 import functools
-from . import io
 from . import spectrum
-from . import backend_loris
+from . import backend_loris as _loris
 
 
-@functools.wraps(backend_loris.analyze)
+__all__ = [
+    "analyze",
+    "analyze_samples"
+]
+
+
+@functools.wraps(_loris.analyze)
 def analyze(*args, **kws):
-    partialdata = backend_loris.analyze(*args, **kws)
+    partialdata = _loris.analyze(*args, **kws)
     return spectrum.fromarray(partialdata)
 
 
-@functools.wraps(backend_loris.analyze_samples)
+@functools.wraps(_loris.analyze_samples)
 def analyze_samples(*args, **kws):
-    partialdata = backend_loris.analyze_samples(*args, **kws)
+    partialdata = _loris.analyze_samples(*args, **kws)
     return spectrum.fromarray(partialdata)

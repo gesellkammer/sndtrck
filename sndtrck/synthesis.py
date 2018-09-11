@@ -16,8 +16,7 @@ from .pack import pack_in_tracks, sample_spectrum_interleave
 from .partial import Partial
 from .config import getconfig
 from .util import sndread, sndwrite
-
-from typing import Tuple, Optional as Opt
+from .typehints import Opt
 
 
 logger = logging.getLogger("sndtrck")
@@ -57,7 +56,8 @@ def bpf2partial(freq, amp, dt=0.010):
     return p
 
 
-def _get_audio_backend() -> Opt[str]:
+def _get_audio_backend():
+    # type: () -> Opt[str]
     """
     Returns a backend for this platform, according
     to the config. 
@@ -93,6 +93,13 @@ _backends_which_support_systemsr = {'jack', 'alsa', 'coreaudio'}
 _backends_which_need_realtime = {'alsa', 'portaudio'}
 
 
+def _backend_available(backend):
+    if backend == 'jack':
+        status = int(subprocess.getstatusoutput("jack_control status")[0])
+        return status == 0
+    else:
+        return True
+
 def _get_system_sr(backend=None):
     """
     Query either given backend or the configured backend for
@@ -115,10 +122,8 @@ def _get_system_sr(backend=None):
     if backend not in _backends_which_support_systemsr:
         return backend, 44100
     if backend == 'jack':
-        status = int(subprocess.getstatusoutput("jack_control status")[0])
-        if status == 1: 
-            # jack is stopped
-            logger.info("get_system_sr: jack does not seam to be running")
+        if not _backend_available('jack'):
+            logger.warn("get_system_sr: jack does not seam to be running")
             sr = None
         else:
             sr = int(subprocess.getoutput("jack_samplerate"))
@@ -311,10 +316,9 @@ class SpectrumPlayer:
         if self._interactive:
             liblo.send(self.oscport, "/exit", 1)
             self.oscserver.free()
-        proc = self.process
+        _deferred(0.25, lambda proc=self.process: proc.terminate() if proc is not None else None)
         self.process = None
-        _deferred(0.25, proc.terminate)
-        
+
     def set_position(self, t, dur=0):
         if dur == 0:
             liblo.send(self.oscport, "/setpos", t)
@@ -364,6 +368,7 @@ def _csound_player_process(matrixpath, sr, backend=None, sndfile=None,
         pkg.Requirement.parse("sndtrck"), "sndtrck/spectrum-player.csd")
     if verbose is None:
         verbose = logger.level <= logging.DEBUG
+    verbose = True  # < ------------------------------------------------ 
     render = sndfile is not None
     config = getconfig()
     if render:

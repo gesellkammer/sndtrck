@@ -130,7 +130,7 @@ class Partial(object):
             if self.numbreakpoints > 1:
                 if self.bws is not None:
                     self._bwbpf = bpf.core.Linear(self.times, self.bws)
-                    self.times, self.bws = bw.points()
+                    self.times, self.bws = self.bw.points()
                 else:
                     self._bwbpf = bpf.const(0)
             else:
@@ -819,6 +819,26 @@ class Partial(object):
         newbreakpoints.append(breakpoints[-1])
         T, F, A, B = zip(*newbreakpoints)
         return Partial(T, F, A, bw=B, label=self.label)
+
+    def harmonicdev(self, f0):
+        """
+        How much does partial deviate from being a harmonic of f0?
+
+        Returns: a value between 0 and 0.5
+
+        TODO: take correlation into account
+        """
+        t0 = max(f0.t0, self.t0)
+        t1 = min(f0.t1, self.t1)
+        if t1 < t0:
+            raise ValueError("partial and f0 should intersect in time")
+        dt = (t1 - t0) / 100
+        freqs0 = f0.freq[t0:t1:dt]
+        freqs1 = self.freq[t0:t1:dt]
+        prod = freqs1/freqs0
+        dev = np.abs(prod - prod.round()).mean()
+        return dev
+
 
 
 def _partials_overlap(partials):

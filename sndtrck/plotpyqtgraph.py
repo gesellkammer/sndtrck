@@ -1,5 +1,4 @@
 import sys
-import numpy as np
 from math import inf
 
 from pyqtgraph import GraphicsObject, getConfigOption, Point
@@ -7,13 +6,10 @@ from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph.functions as fn
 import pyqtgraph as pg
 
-
 from bpf4 import bpf
-from emlib.pitch import amp2db_np, f2m_np
+from emlib.pitchnp import amp2db_np, f2m_np
 from numpyx import minmax1d
 import logging
-from typing import Iterator
-from .partial import Partial
 from functools import lru_cache
 
 
@@ -50,7 +46,6 @@ class MultiColouredLine(GraphicsObject):
         self._mousex = 0
         self._mousey = 0
         self._antialias = antialias
-
 
     def reset(self):
         self.data = []
@@ -238,6 +233,7 @@ def plotpartials(v, partials, allpens, *, widget=None,
     if kind == 'amp':
         curve = _db2lin
         getZ = lambda partial:partial.amps
+        
         def transform(arr):
             arr = amp2db_np(arr)
             return curve.map(arr, out=arr)

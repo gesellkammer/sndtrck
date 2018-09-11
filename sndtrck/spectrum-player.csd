@@ -223,7 +223,6 @@ perf:
 
 	if (gkFilterBw0 > 0 || gkFilterBw1 < 1) then
 		kGain bpf kB, gkFilterBw0 - 0.01, 0, gkFilterBw0, 1, gkFilterBw1, 1, gkFilterBw1+0.001, 0
-		; kGain cmp gkFilterBw0, "<=", kB, "<", gkFilterBw1
 		kA *= kGain
 	endif
 

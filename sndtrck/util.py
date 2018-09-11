@@ -1,13 +1,9 @@
-#from sndfileio import sndread
 import os
 import numpy as np
-import typing as t
 import pysndfile
 
 
-
 def aslist(x):
-    # type: (t.Iterable) -> t.List
     if isinstance(x, list):
         return x
     return list(x)
@@ -24,17 +20,14 @@ except ImportError:
 
 
 def isiterable(obj):
-    # type: (t.Any) -> bool
     return hasattr(obj, '__iter__') and not isinstance(obj, str)
 
 
 def normalizepath(path):
-    # type: (str) -> str
     return os.path.abspath(os.path.expanduser(path))
 
 
 def sndreadmono(sndfile, channel=0, start=0, end=0):
-    # type: (str, int) -> t.Tuple[np.ndarray, int]
     """
     Read a soundfile. If the file has more than one channel
     returns the indicated channel. 
@@ -52,7 +45,35 @@ def sndreadmono(sndfile, channel=0, start=0, end=0):
     return mono, sr
 
 
+def _convert_mp3_wav(mp3, wav, start=0, end=0):
+    import subprocess
+    import shutil
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("Can't read mp3: ffmpeg is not present")
+    cmd = [ffmpeg]
+    if start > 0:
+        cmd.extend(["-ss", str(start)])
+    if end > 0:
+        cmd.extend(["-t", str(end - start)])
+    cmd.extend(["-i", mp3])
+    cmd.append(wav)
+    subprocess.call(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+
+def _sndread_mp3(mp3, start=0, end=0):
+    import tempfile
+    wav = tempfile.mktemp(suffix=".wav")
+    _convert_mp3_wav(mp3, wav, start=start, end=end)
+    out = sndread(wav)
+    os.remove(wav)
+    return out
+
+
 def sndread(sndfile, start=0, end=0):
+    ext = os.path.splitext(sndfile)[1]
+    if ext == '.mp3':
+        return _sndread_mp3(sndfile, start=start, end=end)
     sf = pysndfile.PySndfile(sndfile)
     sr = sf.samplerate()
     duration = sf.frames() / sr
@@ -66,6 +87,7 @@ def sndread(sndfile, start=0, end=0):
         sf.seek(int(start * sr))
     frames = sf.read_frames(int((end - start)*sr))
     return frames, sr
+
 
 def sndwrite(samples, sr, sndfile, encoding=None):
     """

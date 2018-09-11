@@ -1,20 +1,23 @@
-from . import plotpyqtgraph as ppg
+import sys
+import operator as _op
+from functools import lru_cache
+import logging
+from typing import Optional as Opt
+
 import pyqtgraph as pg
 from pyqtgraph import GraphicsObject, getConfigOption, Point
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph.functions as fn
+
+from emlib.pitch import db2amp, f2n
+# from emlib.pitchnp import amp2db_np
+
+from . import plotpyqtgraph as ppg
 from .synthesis import SpectrumPlayer
 from .sinesynth import SineSynth, MultiSineSynth
 from .spectralsurface import SpectralSurface
-import logging
-from weakref import proxy as _proxy
-from emlib.pitch import db2amp, amp2db_np, f2n
-import sys
-import operator as _op
-from functools import lru_cache
 from .config import getconfig
 from . import spectrum as _sp
-from typing import Optional as Opt
 
 
 logger = logging.getLogger("sndtrck")
@@ -313,7 +316,6 @@ class SpectrumEditor:
     def __init__(self, sp, updaterate=12, numloudest=None):
         # type: (_sp.Spectrum, int, Opt[int]) -> None
         cfg = getconfig()
-        # self.spectrum = _proxy(sp, self.close())
         self.spectrum = sp
         self.playing = False
         self.playheadpos = sp.t0
