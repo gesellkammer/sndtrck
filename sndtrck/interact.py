@@ -96,7 +96,7 @@ class Cursor(GraphicsObject):
             return QtCore.QRectF()
         
         px = self.pixelLength(direction=Point(1,0), ortho=True) or 0   # get pixel length orthog. to line
-        w = 1*px
+        w = 1 * px
         # br.setLeft(-w)
         br.setLeft(0)
         # br.setRight(w)
@@ -113,7 +113,7 @@ class Cursor(GraphicsObject):
             br = self.boundingRect()
             self._line = line = QtCore.QLineF(0.0, br.bottom(), 0.0, br.top())
         p.drawLine(line)
-        # p.end()
+        
 
     def setPos(self, pos):
         if pos != self.pos:
@@ -281,8 +281,8 @@ class _SpectrumWidget:
             self._layout.addWidget(self.plotview, 0, 2, 20, 1)
         allpens = ppg.makepens(numcolors, alpha, linewidth)
         if self.partialsplot is None:
-            v.setRange( QtCore.QRect(s.t0, 100, s.t1, 6000) )
-            v.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=24000)
+            v.setRange( QtCore.QRect(s.t0, 100, s.t1, 5000) )
+            v.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=22000)
         self.partialsplot = ppg.plotpartials(v, s, allpens, exp=exp, downsample=downsample,
                                              antialias=antialias, kind=kind, widget=self.partialsplot)
         pg.setConfigOptions(**oldopts)

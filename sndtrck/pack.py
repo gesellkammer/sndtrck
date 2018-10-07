@@ -134,10 +134,8 @@ def sample_spectrum_interleave(sp:Spectrum, dt=0.002, t0=-1, t1=-1,
         t0 = sp.t0
     if t1 < 0:
         t1 = sp.t1
-    return partials_sample(
-        (p.toarray() for p in sp), 
-        dt=dt, t0=t0, t1=t1, maxstreams=maxstreams, interleave=True
-    )
+    return partials_sample((p.toarray() for p in sp), 
+                           dt=dt, t0=t0, t1=t1, maxactive=maxstreams, interleave=True)
 
 
 def sample_spectrum(sp, dt=0.002, t0=-1, t1=-1, maxstreams=0):
@@ -154,9 +152,8 @@ def sample_spectrum(sp, dt=0.002, t0=-1, t1=-1, maxstreams=0):
         t0 = sp.t0
     if t1 < 0:
         t1 = sp.t1
-    return partials_sample(
-        (p.toarray() for p in sp),
-        dt=dt, t0=t0, t1=t1, maxstreams=maxstreams, interleave=False)
+    return partials_sample((p.toarray() for p in sp),
+                           dt=dt, t0=t0, t1=t1, maxactive=maxstreams, interleave=False)
     
 
 def save_spectrum_as_sndfile(sp, outfile, dt=0.002, bits=32):

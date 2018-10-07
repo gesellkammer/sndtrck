@@ -368,7 +368,6 @@ def _csound_player_process(matrixpath, sr, backend=None, sndfile=None,
         pkg.Requirement.parse("sndtrck"), "sndtrck/spectrum-player.csd")
     if verbose is None:
         verbose = logger.level <= logging.DEBUG
-    verbose = True  # < ------------------------------------------------ 
     render = sndfile is not None
     config = getconfig()
     if render:
@@ -382,7 +381,7 @@ def _csound_player_process(matrixpath, sr, backend=None, sndfile=None,
                 '--omacro:MATRIXPATH=%s' % matrixpath]
     else:
         beadsyntflags = config['csound.realtime.beadsyntflags']
-        args = ["csound", "-odac", "-r %d" % sr, 
+        args = ["csound", "-odac", "-r %d" % sr,
                 '--omacro:MATRIXPATH=%s' % matrixpath]
         if backend is None:
             backend = _get_audio_backend()

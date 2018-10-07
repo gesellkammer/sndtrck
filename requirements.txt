@@ -8,6 +8,8 @@ pyqtgraph
 notifydict
 appdirs
 tinytag
+pysdif3
+ctcsound
 -e .
 
 

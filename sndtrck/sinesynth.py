@@ -147,7 +147,8 @@ endin
 
 instr 2
     inumosc = p4
-    aout beadsynt 1, 1, gkFreqs, gkAmps, gkBws, inumosc, -1, -1, 0 
+    ; gaussian noise, freq. interpolation
+    aout beadsynt gkFreqs, gkAmps, gkBws, inumosc, 5 
     aout *= interp(gkgain)
     outch 1, aout, 2, aout
 endin
@@ -168,7 +169,7 @@ instr 100
 endin
 
 instr 200
-    puts "instr 200!", 1
+    ; puts "instr 200!", 1
     igain = i(gkgain)
     gkgain linseg igain, p3-(ksmps/sr), 0
 endin

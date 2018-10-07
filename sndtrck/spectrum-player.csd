@@ -211,15 +211,16 @@ perf:
 	if (krow < 0) || (krow > imaxrow) || (gkplay == 0) kgoto exit
 
 	;          krow, ifn, ifndst,  inumcols  iskip  istart iend istep
-	tabrowlin  krow, ifn, gifreqs, inumcols, iskip, 0,     0,   3
-	tabrowlin  krow, ifn, giamps,  inumcols, iskip, 1,     0,   3
-	tabrowlin  krow, ifn, gibws,   inumcols, iskip, 2,     0,   3
 	
-	kGain[] init inumpartials 
+	; tabrowlin  krow, ifn, gifreqs, inumcols, iskip, 0,     0,   3
+	; tabrowlin  krow, ifn, giamps,  inumcols, iskip, 1,     0,   3
+	; tabrowlin  krow, ifn, gibws,   inumcols, iskip, 2,     0,   3
 
-	kB[] vecview gibws,   0, inumpartials
-	kA[] vecview giamps,  0, inumpartials
-	kF[] vecview gifreqs, 0, inumpartials
+	kF[] getrowlin krow, ifn, inumcols, iskip, 0, 0, 3
+	kA[] getrowlin krow, ifn, inumcols, iskip, 1, 0, 3
+	kB[] getrowlin krow, ifn, inumcols, iskip, 2, 0, 3
+		
+	kGain[] init inumpartials 
 
 	if (gkFilterBw0 > 0 || gkFilterBw1 < 1) then
 		kGain bpf kB, gkFilterBw0 - 0.01, 0, gkFilterBw0, 1, gkFilterBw1, 1, gkFilterBw1+0.001, 0
@@ -229,13 +230,15 @@ perf:
 	if (gkFilterActive == 1) then
 		kGain bpf kF, gkFilterFreq0-30, 0.001, gkFilterFreq0, 1, gkFilterFreq1, 1, gkFilterFreq1+30, 0.001
 		kA *= kGain
-	endif
+	endif	
 	
 	iwavefn = -1  ; built-in sine
 	iphases = -1  ; random phases
-	aout beadsynt gkFreqScale, gkBwScale, gifreqs, giamps, gibws, \ 
-	              inumpartials, iwavefn, iphases, giBeadsyntFlags
-
+	/*
+	beadsynt kFreq[], kAmp[], kBw[], icnt, iflags=0, kfreq=1, kbw=1, iwfn=-1, iphs=-1
+	*/
+	; aout beadsynt gkFreqScale, gkBwScale, kF, kA, kB, inumpartials, iwavefn, iphases, giBeadsyntFlags
+	aout beadsynt kF, kA, kB, inumpartials, giBeadsyntFlags, gkFreqScale, gkBwScale, iwavefn, iphases
 	aout *= gkgain
 
 #ifdef STEREO
@@ -445,9 +448,7 @@ endin
 <CsScore>
 i "init" 0.004 -1
 i "oscils" 0 -1
-; i "ctrl" 0.004 -1
 i "osc" 0 -1
-; i "play" 0.010 -1 1
 f0 36000
 </CsScore>
 </CsoundSynthesizer>
@@ -462,268 +463,3 @@ f0 36000
 
 
 
-
-
-
-
-
-
-<bsbPanel>
- <label>Widgets</label>
- <objectName/>
- <x>0</x>
- <y>0</y>
- <width>656</width>
- <height>114</height>
- <visible>true</visible>
- <uuid/>
- <bgcolor mode="nobackground">
-  <r>255</r>
-  <g>255</g>
-  <b>255</b>
- </bgcolor>
- <bsbObject version="2" type="BSBCheckBox">
-  <objectName>play</objectName>
-  <x>4</x>
-  <y>69</y>
-  <width>20</width>
-  <height>20</height>
-  <uuid>{8a7d19c4-093e-40a5-a0dd-4fba60092f46}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>-3</midicc>
-  <selected>true</selected>
-  <label/>
-  <pressedValue>1</pressedValue>
-  <randomizable group="0">false</randomizable>
- </bsbObject>
- <bsbObject version="2" type="BSBLabel">
-  <objectName/>
-  <x>25</x>
-  <y>69</y>
-  <width>71</width>
-  <height>21</height>
-  <uuid>{9fe15e6b-e41b-4fc1-bab4-5c3bfa7baaa6}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>-3</midicc>
-  <label>PLAY</label>
-  <alignment>left</alignment>
-  <font>Arial</font>
-  <fontsize>10</fontsize>
-  <precision>3</precision>
-  <color>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </color>
-  <bgcolor mode="nobackground">
-   <r>255</r>
-   <g>255</g>
-   <b>255</b>
-  </bgcolor>
-  <bordermode>noborder</bordermode>
-  <borderradius>1</borderradius>
-  <borderwidth>1</borderwidth>
- </bsbObject>
- <bsbObject version="2" type="BSBController">
-  <objectName>playhead</objectName>
-  <x>3</x>
-  <y>4</y>
-  <width>640</width>
-  <height>8</height>
-  <uuid>{dc2faa27-eeeb-482f-9fb8-c47d6a284271}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>0</midicc>
-  <objectName2/>
-  <xMin>0.00000000</xMin>
-  <xMax>1.00000000</xMax>
-  <yMin>0.00000000</yMin>
-  <yMax>1.00000000</yMax>
-  <xValue>0.17021484</xValue>
-  <yValue>0.00000000</yValue>
-  <type>line</type>
-  <pointsize>1</pointsize>
-  <fadeSpeed>0.00000000</fadeSpeed>
-  <mouseControl act="press">jump</mouseControl>
-  <color>
-   <r>0</r>
-   <g>234</g>
-   <b>0</b>
-  </color>
-  <randomizable mode="both" group="0">false</randomizable>
-  <bgcolor>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </bgcolor>
- </bsbObject>
- <bsbObject version="2" type="BSBController">
-  <objectName>edithead</objectName>
-  <x>3</x>
-  <y>13</y>
-  <width>640</width>
-  <height>20</height>
-  <uuid>{0a2b4638-ae3b-40de-b343-70fd41aa7592}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>0</midicc>
-  <objectName2/>
-  <xMin>0.00000000</xMin>
-  <xMax>1.00000000</xMax>
-  <yMin>0.00000000</yMin>
-  <yMax>1.00000000</yMax>
-  <xValue>0.17031250</xValue>
-  <yValue>0.00000000</yValue>
-  <type>line</type>
-  <pointsize>1</pointsize>
-  <fadeSpeed>0.00000000</fadeSpeed>
-  <mouseControl act="press">jump</mouseControl>
-  <color>
-   <r>0</r>
-   <g>170</g>
-   <b>255</b>
-  </color>
-  <randomizable mode="both" group="0">false</randomizable>
-  <bgcolor>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </bgcolor>
- </bsbObject>
- <bsbObject version="2" type="BSBDisplay">
-  <objectName>abstime</objectName>
-  <x>598</x>
-  <y>36</y>
-  <width>44</width>
-  <height>25</height>
-  <uuid>{c411f856-3311-4755-b2e6-e9fa9f3cd448}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>-3</midicc>
-  <label>0.857</label>
-  <alignment>left</alignment>
-  <font>Arial</font>
-  <fontsize>12</fontsize>
-  <precision>3</precision>
-  <color>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </color>
-  <bgcolor mode="nobackground">
-   <r>255</r>
-   <g>255</g>
-   <b>255</b>
-  </bgcolor>
-  <bordermode>border</bordermode>
-  <borderradius>1</borderradius>
-  <borderwidth>1</borderwidth>
- </bsbObject>
- <bsbObject version="2" type="BSBSpinBox">
-  <objectName>speed</objectName>
-  <x>125</x>
-  <y>63</y>
-  <width>74</width>
-  <height>33</height>
-  <uuid>{6ea04370-5c54-40fe-bfa8-331918dfa374}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>0</midicc>
-  <alignment>left</alignment>
-  <font>Arial</font>
-  <fontsize>14</fontsize>
-  <color>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </color>
-  <bgcolor mode="nobackground">
-   <r>255</r>
-   <g>255</g>
-   <b>255</b>
-  </bgcolor>
-  <resolution>0.00100000</resolution>
-  <minimum>-999</minimum>
-  <maximum>999</maximum>
-  <randomizable group="0">false</randomizable>
-  <value>0</value>
- </bsbObject>
- <bsbObject version="2" type="BSBCheckBox">
-  <objectName>loop</objectName>
-  <x>3</x>
-  <y>42</y>
-  <width>20</width>
-  <height>20</height>
-  <uuid>{e64432e0-e165-43a8-81d7-596e6f7677e2}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>-3</midicc>
-  <selected>false</selected>
-  <label/>
-  <pressedValue>1</pressedValue>
-  <randomizable group="0">false</randomizable>
- </bsbObject>
- <bsbObject version="2" type="BSBLabel">
-  <objectName/>
-  <x>24</x>
-  <y>42</y>
-  <width>48</width>
-  <height>21</height>
-  <uuid>{959e7eaa-3175-40e8-8580-860e62e2961a}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>-3</midicc>
-  <label>LOOP</label>
-  <alignment>left</alignment>
-  <font>Arial</font>
-  <fontsize>10</fontsize>
-  <precision>3</precision>
-  <color>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </color>
-  <bgcolor mode="nobackground">
-   <r>255</r>
-   <g>255</g>
-   <b>255</b>
-  </bgcolor>
-  <bordermode>noborder</bordermode>
-  <borderradius>1</borderradius>
-  <borderwidth>1</borderwidth>
- </bsbObject>
- <bsbObject version="2" type="BSBLabel">
-  <objectName/>
-  <x>125</x>
-  <y>41</y>
-  <width>44</width>
-  <height>23</height>
-  <uuid>{8de6fafa-3e6c-4d00-b534-70549bed15e6}</uuid>
-  <visible>true</visible>
-  <midichan>0</midichan>
-  <midicc>-3</midicc>
-  <label>speed</label>
-  <alignment>left</alignment>
-  <font>Arial</font>
-  <fontsize>10</fontsize>
-  <precision>3</precision>
-  <color>
-   <r>0</r>
-   <g>0</g>
-   <b>0</b>
-  </color>
-  <bgcolor mode="nobackground">
-   <r>255</r>
-   <g>255</g>
-   <b>255</b>
-  </bgcolor>
-  <bordermode>noborder</bordermode>
-  <borderradius>1</borderradius>
-  <borderwidth>1</borderwidth>
- </bsbObject>
-</bsbPanel>
-<bsbPresets>
-</bsbPresets>
-<EventPanel name="" tempo="60.00000000" loop="8.00000000" x="810" y="70" width="655" height="346" visible="true" loopStart="0" loopEnd="0">i 2 0 -1 </EventPanel>
