@@ -3,7 +3,7 @@ import operator as _operator
 import logging
 import tempfile
 from functools import lru_cache
-from emlib.pitch import db2amp, f2m
+from emlib.pitchtools import db2amp, f2m
 from emlib.snd import audiosample
 
 from . import io

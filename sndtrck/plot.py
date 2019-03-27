@@ -1,15 +1,17 @@
 import bpf4 as bpf
-from emlib.pitch import *
+import logging
+from emlib.pitchtoolsnp import amp2db_np
 from . import partial as _partial
 from .config import getconfig
-import logging
-from typing import Any
+from . import typehints as t
+
 
 logger = logging.getLogger("sndtrck")
 
 
 def plot(spectrum, linewidth=2, downsample=1, antialias=True, exp=1, 
-         showpoints=False, kind='amp', pitchmode='freq', **kws):
+         showpoints=False, kind='amp', pitchmode='freq', 
+         backend=None, **kws):
     """
     downsample: 1 plots all breakpoints, 2 plots 1/2, 3 plots 1/3 
                 of all breakpoints, etc.
@@ -21,7 +23,7 @@ def plot(spectrum, linewidth=2, downsample=1, antialias=True, exp=1,
          * If exp == 2, only very strong breakpoints will be visible
     """
     config = getconfig()
-    backendname = config['plot.backend']
+    backendname = backend or config['plot.backend']
     if backendname == 'pyplot':
         func = plot_pyplot
     elif backendname == 'pyqtgraph':
@@ -36,8 +38,9 @@ def plot(spectrum, linewidth=2, downsample=1, antialias=True, exp=1,
         else:
             logger.debug("plot: The shown points don't reflect the actual points"
                          "because downsample > 1")
-    return  func(spectrum, downsample=downsample, antialias=antialias, exp=exp, 
-                linewidth=linewidth, showpoints=showpoints, kind=kind, pitchmode=pitchmode, **kws)
+    return func(spectrum, downsample=downsample, antialias=antialias, exp=exp, 
+                linewidth=linewidth, showpoints=showpoints, kind=kind, pitchmode=pitchmode,
+                **kws)
     
 
 def plotdraft(spectrum, linewidth=2, exp=1):
@@ -59,11 +62,11 @@ def plot_pyplot(partials, size=20, alpha=0.5, downsample=1, kind='amp', **kws):
 
 
 _pyplot_colorcurve_amp = bpf.linear(-90, 0.8, -30, 0.3, -6, 0.1, 0, 0)
-_pyplot_colorcurve_bw  = bpf.linear(0, 0.15, 0.5, 0.3, 0.9, 0.5, 0.95, 0.8, 1, 0.99)
+_pyplot_colorcurve_bw = bpf.linear(0, 0.15, 0.5, 0.3, 0.9, 0.5, 0.95, 0.8, 1, 0.99)
 
 
-def _pyplot_plot_partial_amp(partial, ax, size=20, alpha=0.5, downsample=1):
-    # type: (_partial.Partial, Any, float, float) -> Any
+def _pyplot_plot_partial_amp(partial: _partial.Partial, ax, size=20.0, alpha=0.5,
+                             downsample:int=1):
     X = partial.times     # type: np.ndarray
     Y = partial.freqs     # type: np.ndarray
     amps = partial.amps   # type: np.ndarray
@@ -81,8 +84,7 @@ def _pyplot_plot_partial_amp(partial, ax, size=20, alpha=0.5, downsample=1):
     return ax
 
 
-def _pyplot_plot_partial_bw(partial, ax=None, size=20, alpha=0.5, downsample=1):
-    # type: (_partial.Partial, Any, float, float) -> Any
+def _pyplot_plot_partial_bw(partial, ax=None, size=20.0, alpha=0.5, downsample=1):
     X = partial.times     # type: np.ndarray
     Y = partial.freqs     # type: np.ndarray
     Z = partial.amps      # type: np.ndarray

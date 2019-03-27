@@ -5,25 +5,20 @@ import bpf4 as bpf
 from bpf4.api import BpfInterface as _Bpf
 from numpyx import array_is_sorted, minmax1d, nearestitem
 from numpyx import trapz as _trapz, weightedavg as _weightedavg, allequal as _allequal
-from .const import UNSETLABEL
 from emlib.lib import snap_to_grid, snap_array
-from .util import interpol_linear
-from emlib.pitch import (
-    amp2db, 
-    f2m, 
-    interval2ratio)
-from emlib.pitchnp import ( 
-    amp2db_np, db2amp_np,
-    interval2ratio_np,
-    f2m_np, m2f_np)
+from emlib.pitchtools import amp2db, f2m, interval2ratio
+from emlib.pitchtoolsnp import amp2db_np, db2amp_np, interval2ratio_np, f2m_np, m2f_np
 from emlib.iterlib import pairwise
-from .typehints import *
+from . import typehints as t
 import logging
+
+from .const import UNSETLABEL
+from .util import interpol_linear
 
 
 logger = logging.getLogger("sndtrck")
 
-OptArr = Opt[np.ndarray]
+OptArr = t.Opt[np.ndarray]
 arr = np.ndarray
 
 Breakpoint = namedtuple("Breakpoint", "freq amp phase bw")
@@ -45,7 +40,7 @@ def getzeros1(size):
 ###################################################################
 
 
-def _asFloatArray(a: U[Seq, np.ndarray]) -> np.ndarray:
+def _asFloatArray(a: t.U[t.Seq, np.ndarray]) -> np.ndarray:
     if isinstance(a, np.ndarray):
         return a
     return np.array(a, dtype=float)
@@ -79,33 +74,33 @@ class Partial(object):
                          f"times: {times}, freqs: {freqs}, amps: {amps}")
         if T[0] < 0:
             raise ValueError("A Partial can't have negative times")
-        self.freqs = _asFloatArray(freqs)   # type: np.ndarray
-        self.amps = _asFloatArray(amps)     # type: np.ndarray
-        self.phases = None if phase is None else _asFloatArray(phase)  # type: Opt[np.ndarray]
-        self.bws = None if bw is None else _asFloatArray(bw)           # type: Opt[np.ndarray]
-        self.label = label if label is not None else UNSETLABEL  # type: int
-        self.t0 = T[0]     # type: float
-        self.t1 = T[-1]    # type: float
-        self.numbreakpoints = L    # type: int
-        self._meta = meta  # type: Opt[str]
+        self.freqs: np.ndarray = _asFloatArray(freqs)
+        self.amps: np.ndarray = _asFloatArray(amps)
+        self.phases: t.Opt[np.ndarray] = None if phase is None else _asFloatArray(phase)
+        self.bws: t.Opt[np.ndarray] = None if bw is None else _asFloatArray(bw)
+        self.label: int = label if label is not None else UNSETLABEL
+        self.t0: float = T[0]
+        self.t1: float = T[-1]
+        self.numbreakpoints:int = L
+        self._meta: t.Opt[str] = meta
         self._freqbpf = None
         self._ampbpf = None
         self._phasebpf = None
         self._bwbpf = None
-        self._array = None         # type: Opt[np.ndarray]
-        self._meanfreq = -1        # type: float
-        self._meanamp  = -1        # type: float
-        self._wmeanfreq = -1       # type: float
-        self._minfreq = -1         # type: float
-        self._maxfreq = -1         # type: float
-        self._hash = 0             # type: int
+        self._array: t.Opt[np.ndarray] = None    
+        self._meanfreq = -1.0
+        self._meanamp = -1.0
+        self._wmeanfreq = -1.0
+        self._minfreq = -1.0
+        self._maxfreq = -1.0
+        self._hash = 0
         
     @property
-    def duration(self):
+    def duration(self) -> float:
         return self.t1 - self.t0
     
     @property
-    def freq(self):
+    def freq(self) -> float:
         if self._freqbpf is None:
             if self.numbreakpoints > 1:
                 self._freqbpf = bpf.core.Linear(self.times, self.freqs)
@@ -115,7 +110,7 @@ class Partial(object):
         return self._freqbpf
 
     @property
-    def amp(self):
+    def amp(self) -> float:
         if self._ampbpf is None:
             if self.numbreakpoints > 1:
                 self._ampbpf = bpf.core.Linear(self.times, self.amps)
@@ -125,7 +120,7 @@ class Partial(object):
         return self._ampbpf
 
     @property
-    def bw(self):
+    def bw(self) -> float:
         if self._bwbpf is None:
             if self.numbreakpoints > 1:
                 if self.bws is not None:
@@ -159,13 +154,11 @@ class Partial(object):
             self._hash = self._calculate_hash()
             return self._hash
 
-    def __len__(self):
-        # type: () -> int
+    def __len__(self) -> int:
         return self.numbreakpoints
 
     @classmethod
-    def fromarray(cls, data, label=0):
-        # type: (np.ndarray, int) -> Partial
+    def fromarray(cls, data:np.ndarray, label:int=0) -> 'Partial':
         """
         data is a 2D array with the shape (numbreakpoints, 5)
         columns: time freq amp phase bw
@@ -175,8 +168,10 @@ class Partial(object):
         out._array = data
         return out
 
-    def toarray(self):
-        # type: () -> np.ndarray
+    def toarray(self) -> np.ndarray:
+        """
+        Convert this Partial to a 2D array
+        """
         array = self._array
         if array is not None:
             return array
@@ -195,15 +190,7 @@ class Partial(object):
         self._array = array = np.column_stack((t, f, a, ph, bw))
         return array
 
-    def __getitem2__(self, i):
-        phases = self.phases
-        ph = phases[i] if phases is not None else 0
-        bws = self.bws
-        bw = bws[i] if bws is not None else 0
-        return self.times[i], self.freqs[i], self.amps[i], ph, bw 
-
-    def __getitem__(self, i):
-        # type: (int) -> np.ndarray
+    def __getitem__(self, i:int) -> np.ndarray:
         a = self._array
         return a[i] if a is not None else self.toarray()[i]
         
@@ -214,7 +201,7 @@ class Partial(object):
         return "Partial %d [%.4f:%.4f] %.1fHz" % \
             (self.label, self.t0, self.t1, self.meanfreq)
         
-    def dump(self, showdb=True):
+    def dump(self, showdb=True) -> str:
         lines = [f"Partial {self.label} [{self.t0:.4f}:{self.t1:.4f}]"]
         if self.getmeta():
             lines.append(f"   metadata: {self._meta}")
@@ -233,7 +220,7 @@ class Partial(object):
         metastr = ";".join(items)
         self._meta = metastr
 
-    def getmeta(self) -> Dict[str, str]:
+    def getmeta(self) -> t.Dict[str, str]:
         """
         Returns a dictionary representing the metadata of this partial
         * this dictionary is read only, any modifications to it will NOT
@@ -246,8 +233,7 @@ class Partial(object):
         pairs = [pair.split("=") for pair in self._meta.split(";")]
         return {pair[0]:pair[1] for pair in pairs}
 
-    def __eq__(self, other):
-        # type: (Partial) -> bool
+    def __eq__(self, other:'Partial') -> bool:
         if self is other:
             return True
         if self.numbreakpoints != other.numbreakpoints:
@@ -260,22 +246,38 @@ class Partial(object):
             return False
         return True
 
-    def _calculate_hash(self):
+    def _calculate_hash(self) -> int:
         data = self.times * self.amps
         return hash(data.tostring())
 
-    def __ne__(self, other):
+    def __ne__(self, other) -> bool:
         return not(self == other)
 
-    def at(self, t):
-        # type: (float) -> Breakpoint
+    def at(self, t:float) -> 'Breakpoint':
         """
         returns a Breakpoint interpolated at time `t`
         """
         return Breakpoint(self.freq(t), self.amp(t), self.phase(t), self.bw(t))
 
-    def insert(self, time, freq, amp, bw=0):
-        # type: (U[float, Seq[float]], U[float, Seq[float]], U[float, Seq[float]]) -> Partial
+    def _insert_many(self, times, freqs, amps, bws=None):
+        assert len(times) == len(freqs) == len(amps)
+        idx = np.searchsorted(self.times, times)
+        times2 = np.insert(self.times, idx, times)
+        freqs2 = np.insert(self.freqs, idx, freqs)
+        amps2 = np.insert(self.amps, idx, amps)
+        if self.bws is None and bws is None:
+            bws2 = None
+        else:
+            bws0 = self.bws if self.bws is not None else getzeros1(len(self.times))
+            bws = bws if bws is not None else getzeros1(len(times))
+            bws2 = np.insert(bws0, idx, bws)
+        return Partial(times2, freqs2, amps2, bw=bws2, label=self.label)
+
+    def insert(self,
+               time: t.U[float, t.Seq[float]],
+               freq: t.U[float, t.Seq[float]],
+               amp: t.U[float, t.Seq[float]],
+               bw=0) -> 'Partial':
         """
         Insert a breakpoint at given time. Returns a **new** Partial
 
@@ -291,13 +293,7 @@ class Partial(object):
             freq = [freq]
             amp = [amp]
             bw = [bw]
-        assert len(time) == len(freq) == len(amp)
-        idx = np.searchsorted(self.times, time)
-        times = np.insert(self.times, idx, time)
-        freqs = np.insert(self.freqs, idx, freq)
-        amps  = np.insert(self.amps, idx, amp)
-        bws = np.insert(self.bws, idx, bw) if self.bws is not None else None
-        return Partial(times, freqs, amps, bw=bws, label=self.label)
+        return self._insert_many(time, freq, amp, bw)
 
     def append(self, time, freq, amp, bw=0):
         """
@@ -324,25 +320,6 @@ class Partial(object):
         bws = np.append(self.bws, bw) if self.bws else None
         return Partial(times, freqs, amps, phase=None, bws=bws, label=self.label)
    
-    def _cropslow(self, t0, t1):
-        # type: (float, float) -> Partial
-        """Returns a new Partial cropped to t0-t1"""
-        # TODO: make this faster
-        t0 = max(t0, self.t0)
-        t1 = min(t1, self.t1)
-        assert t1 > t0
-        phs, bws = self.phases, self.bws
-        arrslice = bpf.util.arrayslice
-        if phs is None and bws is None:
-            T, F, A = arrslice(t0, t1, self.times, self.freqs, self.amps)
-        elif phs is None:
-            T, F, A, B = arrslice(t0, t1, self.times, self.freqs, self.amps, bws)
-        elif bws is None:
-            T, F, A, P = arrslice(t0, t1, self.times, self.freqs, self.amps, phs)
-        else:
-            T, F, A, P, B = arrslice(t0, t1, self.times, self.freqs, self.amps, phs, bws)
-        return Partial(T, F, A, P, B, label=self.label)
-
     def crop(self, t0, t1):
         # type: (float, float) -> Partial
         """
@@ -362,7 +339,7 @@ class Partial(object):
         bws = self.bw.map(times) if self.bws is not None else None
         return self.__class__(times, freqs, amps, phases, bws, label=self.label)
 
-    def slice(self, t0, t1, include=True):
+    def slice(self, t0:float, t1:float, include=True) -> 'Partial':
         """
         Slice this partial without adding new breakpoints.
         In comparison to crop, slice returns a "view" to this 
@@ -391,14 +368,14 @@ class Partial(object):
         P = self.phases[idx0:idx1]
         return Partial(T, F, A, P, B)
 
-    def copy(self):
-        # type: () -> Partial
+    def copy(self) -> 'Partial':
         out = Partial(self.times, self.freqs, self.amps, self.phases, self.bws,
                       label=self.label, meta=self._meta)
         out._array = self._array
         out._meanamp = self._meanamp
         out._meanfreq = self._meanfreq
         out._wmeanfreq = self._wmeanfreq
+        return out
     
     def clone(self,
               times: np.ndarray = None,
@@ -430,13 +407,13 @@ class Partial(object):
             return self._meanfreq
         if self.numbreakpoints < 2:
             return self.freqs[0] if self.numbreakpoints else 0
-        self._meanfreq = a = self.freq.integrate() / (self.t1 - self.t0)  # 10x faster than accel.trapz! why?
+        # the next line is 10x faster than accel.trapz! why?
+        self._meanfreq = a = self.freq.integrate() / (self.t1 - self.t0)  
         # self._meanfreq = a = _trapz(self.freqs, self.times) / (self.t1 - self.t0)
         return a
 
     @property
-    def meanfreq_weighted(self):
-        # type: () -> float
+    def meanfreq_weighted(self) -> float:
         """
         weighted mean frequency
         """
@@ -448,8 +425,7 @@ class Partial(object):
         return a
     
     @property
-    def meanamp(self):
-        # type: () -> float
+    def meanamp(self) -> float:
         if self._meanamp >= 0:
             return self._meanamp
         # self._meanamp = a = _trapz(self.amps, self.times) / (self.t1 - self.t0)
@@ -458,6 +434,14 @@ class Partial(object):
         self._meanamp = a = self.amp.integrate() / (self.t1 - self.t0)
         return a
 
+    def energy(self) -> float:
+        """
+        Returns the energy provided by this partial
+
+        energy is the integration of amplitude over time
+        """
+        return self.amp.integrate()
+
     @property
     def meanbw(self):
         if self.numbreakpoints < 2:
@@ -465,8 +449,7 @@ class Partial(object):
         return _trapz(self.bws, self.times) / (self.t1 - self.t0)
     
     @property
-    def minfreq(self):
-        # type: () -> float
+    def minfreq(self) -> float:
         if self._minfreq >= 0:
             return self._minfreq
         f0, f1 = minmax1d(self.freqs)
@@ -482,8 +465,7 @@ class Partial(object):
         self._minfreq, self._maxfreq = minmax1d(self.freqs)
         return self._maxfreq
 
-    def _scalevaramp(self, gainfunc):
-        # type: (U[_Bpf, Fun]) -> Partial
+    def _scalevaramp(self, gainfunc: t.U[_Bpf, t.Fun]) -> 'Partial':
         times = self.times
         if isinstance(gainfunc, _Bpf):
             gains = gainfunc.map(times)
@@ -505,8 +487,7 @@ class Partial(object):
             return self._scalevaramp(gain) 
         return self.clone(amps=self.amps*gain)
 
-    def oversampled(self, n):
-        # type: (int) -> Partial
+    def oversampled(self, n: int) -> 'Partial':
         dt = self.duration / (self.numbreakpoints*n)
         return self.resampled(dt)
 
@@ -520,7 +501,7 @@ class Partial(object):
         shape: the fade shape as string definition ('linear', 'expon(2)', etc)
         """
         if time < self.duration:
-            raise ValueError(f"fadetime ({time}) can't be longer than the duration ({self.duration}) of the partial.")
+            raise ValueError(f"fadetime ({time}) can't be > dur. ({self.duration}) of the partial")
         
         if kind == 'fadein':
             faded = self.crop(self.t0, self.t0+time)
@@ -543,7 +524,7 @@ class Partial(object):
         else:
             raise ValueError("kind should be 'fadein', 'fadeout' or 'both'")
 
-    def estimate_breakpoint_gap(self, percentile=50):
+    def estimate_breakpoint_gap(self, percentile=50) -> float:
         T = self.times
         diffs = T[1:] - T[:-1]
         gap = np.percentile(diffs, percentile)
@@ -569,14 +550,15 @@ class Partial(object):
 
         fade0 = fadetime if self.t0 > fadetime else self.t0
         if self.t0 == 0:
+            npconcat = np.concatenate
             bp1 = self.times[1]
             t0 = min(fadetime, bp1*0.5)
-            times2 = np.concatenate(([0, t0], self.times[1:], [self.t1 + fadetime]))
+            times2 = npconcat(([0, t0], self.times[1:], [self.t1 + fadetime]))
             assert array_is_sorted(times2)
             a0 = self.amp(t0)
-            amps2  = np.concatenate(([0, a0], self.amps[1:], [0]))
-            freqs2 = np.concatenate(([self.freq(0), self.freq(t0)], self.freqs[1:], [self.freqs[-1]]))
-            bws2 = np.concatenate(([self.bws[0]], self.bws, [self.bws[-1]]))
+            amps2 = npconcat(([0, a0], self.amps[1:], [0]))
+            freqs2 = npconcat(([self.freq(0), self.freq(t0)], self.freqs[1:], [self.freqs[-1]]))
+            bws2 = npconcat(([self.bws[0]], self.bws, [self.bws[-1]]))
             phases2 = None    # TODO: fix phases
         else:
             amps2 = extendarray(self.amps, 0, 0)
@@ -610,8 +592,7 @@ class Partial(object):
             times1 = curve.map(times0)
         return self.clone(times=times1)
                 
-    def freqwarp(self, curve):
-        # type: (_Bpf) -> Partial
+    def freqwarp(self, curve:_Bpf) -> 'Parial':
         """
         Example: snap this spectrum to the chromatic scale
 
@@ -628,8 +609,7 @@ class Partial(object):
         freqs = curve.map(freqs)
         return self.clone(freqs=freqs)
 
-    def freqwarp_dynamic(self, gradient):
-        # type: (Fun[[float, float], float]) -> Partial
+    def freqwarp_dynamic(self, gradient:t.Fun[[float, float], float]) -> 'Partial':
         """
         Similar to freqwarp, but the warping curve can change over time,
         so it takes a gradient (a function of time and freq)
@@ -640,8 +620,7 @@ class Partial(object):
                              dtype=float)
         return self.clone(freqs=freqs2)
 
-    def equalize(self, curve):
-        # type: (_Bpf) -> Partial
+    def equalize(self, curve:_Bpf) -> 'Partial':
         """
         Apply a frequency dependent gain to each breakpoint
 
@@ -652,8 +631,7 @@ class Partial(object):
         amps = self.amps * curve.map(self.freqs)
         return self.clone(amps=amps)
 
-    def normalized(self, maxpeak=1.0):
-        # type: (float) -> Partial
+    def normalized(self, maxpeak=1.0) -> 'Partial':
         """
         Return a normalized version of this Partial
 
@@ -665,8 +643,7 @@ class Partial(object):
         gain = maxpeak / np.absolute(Y).max()
         return self.scaleamp(gain)
         
-    def resampled(self, dt):
-        # type: (float) -> Partial
+    def resampled(self, dt:float) -> 'Partial':
         """
         Return a new partial resampled at the given time interval
 
@@ -691,8 +668,7 @@ class Partial(object):
         bws = None if self.bws is None else self.bw.map(times)
         return Partial(times, freqs, amps, phases, bws, label=self.label)
 
-    def transpose(self, interval):
-        # type: (U[float, Fun1]) -> Spectrum
+    def transpose(self, interval: t.U[float, t.Fun1]) -> 'Spectrum':
         if isinstance(interval, (int, float)):
             ratio = interval2ratio(interval)
             return self.clone(freqs=self.freqs*ratio)
@@ -702,13 +678,11 @@ class Partial(object):
             return self.clone(freqs=self.freqs*ratios)
         else:
             raise TypeError("interval should be a number or a function(time) -> interval")
-        return self.clone(freqs=freqs)
         
-    def shifted(self, dt=0.0, df=0.0):
-        # type: (float, U[float, Fun1], U[float, Fun1]) -> Partial
+    def shifted(self, dt=0.0, df:t.U[float, t.Fun1]=0.0) -> 'Partial':
         """
-        Shift this partial on either the time or freq coord. 
-        A shift in interval (in semitones) can also be specified.
+        Shift this partial on either the time or freq coord.
+        To shift frequency by a given interval, use transpose
 
         dt: delta time
         df: delta freq, can be a function (time) -> df
@@ -722,11 +696,11 @@ class Partial(object):
         freqs = self.freqs
         times = self.times
         if df != 0:
-            if isinstance(interval, (int, float)):
+            if isinstance(df, (int, float)):
                 freqs = freqs + df  # type: np.ndarray
                 if (freqs < 0).any():
                     raise ValueError("a Partial can't have negative frequencies")
-            elif callable(interval):
+            elif callable(df):
                 freqs = freqs + bpf.asbpf(df).map(times)
                 if (freqs < 0).any():
                     raise ValueError("a Partial can't have negative frequencies")
@@ -737,10 +711,8 @@ class Partial(object):
         return Partial(times, freqs, self.amps, self.phases, self.bws, label=self.label)
         
     def quantized(self,
-                  pitchgrid=None,  # type: U[float, np.ndarray, None]
-                  dbgrid=None,     # type: U[float, np.ndarray, None]
-                  ):
-        # type: (...) -> Partial
+                  pitchgrid: t.U[float, np.ndarray]=None,
+                  dbgrid:t.U[float, np.ndarray]=None) -> 'Partial':
         """
         Returns a new partial quantized to the given grids
 
@@ -779,8 +751,7 @@ class Partial(object):
             amps = self.amps
         return self.clone(freqs=freqs, amps=amps)
 
-    def simplify(self, pitchdelta=0.1, dbdelta=1, bwdelta=0.1):
-        # type: (float, float, float) -> Partial
+    def simplify(self, pitchdelta=0.1, dbdelta=1.0, bwdelta=0.1) -> 'Partial':
         """
         Remove breakpoints where the variation is under the given deltas. 
         A breakpoint is removed if the variation it imposes is below any
@@ -820,7 +791,7 @@ class Partial(object):
         T, F, A, B = zip(*newbreakpoints)
         return Partial(T, F, A, bw=B, label=self.label)
 
-    def harmonicdev(self, f0):
+    def harmonicdev(self, f0:'Partial') -> float:
         """
         How much does partial deviate from being a harmonic of f0?
 
@@ -838,7 +809,6 @@ class Partial(object):
         prod = freqs1/freqs0
         dev = np.abs(prod - prod.round()).mean()
         return dev
-
 
 
 def _partials_overlap(partials):

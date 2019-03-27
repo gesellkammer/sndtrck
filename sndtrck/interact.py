@@ -9,8 +9,7 @@ from pyqtgraph import GraphicsObject, getConfigOption, Point
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph.functions as fn
 
-from emlib.pitch import db2amp, f2n
-# from emlib.pitchnp import amp2db_np
+from emlib.pitchtools import db2amp, f2n
 
 from . import plotpyqtgraph as ppg
 from .synthesis import SpectrumPlayer

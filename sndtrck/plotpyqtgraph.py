@@ -7,7 +7,7 @@ import pyqtgraph.functions as fn
 import pyqtgraph as pg
 
 from bpf4 import bpf
-from emlib.pitchnp import amp2db_np, f2m_np
+from emlib.pitchtoolsnp import amp2db_np, f2m_np
 from numpyx import minmax1d
 import logging
 from functools import lru_cache
@@ -26,7 +26,7 @@ HAVE_OPENGL = False
 
 pg.setConfigOptions(
     background=(0, 0, 0),
-    useOpenGL=False,
+    useOpenGL=True,
     # enableExperimental=True,
     antialias=True
 )

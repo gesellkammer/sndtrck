@@ -1,7 +1,6 @@
 from .spectrum import Spectrum
 import bisect
-# import bpf4 as bpf
-from emlib.pitch import amp2db, db2amp
+from emlib.pitchtools import amp2db, db2amp
 from emlib.interpol import interpol_linear as _linlin
 from typing import Sequence as _S
 
