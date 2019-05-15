@@ -56,7 +56,8 @@ DEFAULT_CONFIG = {
     'spectrumeditor.numloudest': 4,
     'plot.downsample': 1,
     'plot.linewidth': 2,
-    'plot.showpoints_disables_downsample': True
+    'plot.showpoints_disables_downsample': True,
+    'A4': 440
 }
 
 
@@ -198,3 +199,5 @@ def resetconfig():
         os.remove(path)
     global _CONFIG
     _CONFIG = _wrapdict(DEFAULT_CONFIG)
+
+config = getconfig()

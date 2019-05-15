@@ -11,6 +11,7 @@ import pyqtgraph.functions as fn
 
 from emlib.pitchtools import db2amp, f2n
 
+
 from . import plotpyqtgraph as ppg
 from .synthesis import SpectrumPlayer
 from .sinesynth import SineSynth, MultiSineSynth
@@ -560,8 +561,8 @@ class SpectrumEditor:
         if t is None:
             t = self._plot._mousex
         numnotes = self._num_loudest_partials
-        ch = self.spectrum.chord_at(t, maxnotes=numnotes)
-        ch.asmusic21(showcents=False, split=True).show(method)
+        chord = self.spectrum.chord_at(t, maxnotes=numnotes)
+        chord.asmusic21().show(method)
 
     def _synth_loudest_partials(self, state:bool, minamp_db=-60):
         if not state:

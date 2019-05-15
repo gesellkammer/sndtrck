@@ -1,7 +1,8 @@
 import os
+from math import log
 import numpy as np
 import pysndfile
-
+from .config import config
 
 def aslist(x):
     if isinstance(x, list):
@@ -147,4 +148,25 @@ def freopen(f, option, stream):
     newfd = stream.fileno()
     os.close(newfd)
     os.dup2(oldfd, newfd)
+
+
+def db2amp(db: float) -> float:
+    """ 
+    convert dB to amplitude (0, 1) 
+
+    db: a value in dB
+    """
+    return 10.0**(0.05*db)
+
+
+def f2m(freq: float) -> float:
+    """
+    Convert a frequency in Hz to a midi-note
+
+    See also: set_reference_freq, temporaryA4
+    """
+    a4 = config.get('A4', 442.0)
+    if freq < 9:
+        return 0
+    return 12.0 * log(freq/a4, 2) + 69.0
 

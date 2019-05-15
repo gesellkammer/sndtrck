@@ -1,16 +1,14 @@
+from __future__ import annotations
 from bpf4 import bpf
 import operator as _operator
 import logging
 import tempfile
 from functools import lru_cache
-from emlib.pitchtools import db2amp, f2m
-from emlib.snd import audiosample
 
 from . import io
 from .config import getconfig
 from .util import *
 from .partial import Partial
-from . import music
 from . import typehints as t
 
 
@@ -143,8 +141,7 @@ class Spectrum(object):
 
         return Spectrum(out, skipsort=True)
 
-    def partials_between_freqs(self, minfreq=0., maxfreq=24000., method="mean"):
-        # type: (float, float, str) -> Spectrum
+    def partials_between_freqs(self, minfreq=0., maxfreq=24000., method="mean") -> Spectrum:
         """
         * method: "weighted"     --> use the weighted meanfreq.
                   "mean"         --> use the meanfreq.
@@ -160,14 +157,16 @@ class Spectrum(object):
             raise ValueError("partials_between_freqs: method not understood")
         return Spectrum(out, skipsort=True)
 
-    def chord_at(self, t, maxnotes=0, minamp=-50, mindur=0, minfreq=0, maxfreq=inf):
-        # type: (float, int, float, float, float, float) -> music.Chord
+    def data_at(self, t:float, maxnotes=0, minamp=-50., mindur=0., minfreq=0., maxfreq=inf
+                 ) -> t.List[t.Tup[float, float]]:
         """
         A quick way to query a spectrum at a given time
 
         maxnotes: the max. amount of notes in the chord. 0 for unlimited
         minamp: minimum amplitude to consider
         mindur: consider only partials with a duration greater than this
+
+        Returns a list of tuples (freq, amp), sorted by higher amplitude
         """
         data = []
         minamp = db2amp(minamp)
@@ -177,15 +176,31 @@ class Spectrum(object):
         for p in partials:
             amp = p.amp(t)
             if amp >= minamp and p.duration > mindur:
-                data.append((f2m(p.freq(t)), amp))
+                data.append((p.freq(t), amp))
         data.sort(reverse=True, key=_operator.itemgetter(1))
         if maxnotes > 0:
             data = data[:maxnotes]
-        out = music.makeChord(data)
-        return out
+        return data
 
-    def filter(self, mindur=0, minamp=-90, minfreq=0., maxfreq=24000., minbps=1):
-        # type: (float, float, float, float) -> Spectrum
+    def chord_at(self, t:float, maxnotes=0, minamp=-50., mindur=0., 
+                 minfreq=0., maxfreq=inf,
+                 ) -> t.List[t.Tup[float, float]]:
+        """
+        A quick way to query a spectrum at a given time
+
+        maxnotes: the max. amount of notes in the chord. 0 for unlimited
+        minamp: minimum amplitude to consider
+        mindur: consider only partials with a duration greater than this
+
+        Returns a Chord
+        """
+        data = self.data_at(t, maxnotes=maxnotes, minamp=minamp, mindur=mindur, minfreq=minfreq,
+                            maxfreq=maxfreq)
+        notes = [(f2m(freq), amp) for freq, amp in data]
+        from emlib.music import core 
+        return core.Chord(notes)
+        
+    def filter(self, mindur=0., minamp=-90., minfreq=0., maxfreq=24000., minbps=1) -> Spectrum:
         """
         Intended for a quick filtering of undesired partials
 
@@ -212,7 +227,7 @@ class Spectrum(object):
                 out.append(p)
         return Spectrum(out, skipsort=self._sorted)
 
-    def equalize(self, curve, mindb=-90):
+    def equalize(self, curve:Bpf, mindb=-90.) -> Spectrum:
         # type: (Bpf, float) -> Spectrum
         """
         Equalize all partials in this Spectrum
@@ -227,7 +242,7 @@ class Spectrum(object):
         filtered = [p for p in equalized if p.meanamp > minamp]
         return Spectrum(filtered, skipsort=self._sorted)
 
-    def filtercurve(self, freq2minamp=None, freq2mindur=None):
+    def filtercurve(self, freq2minamp:Bpf=None, freq2mindur:Bpf=None) -> t.Tup[Spectrum, Spectrum]:
         # type: (t.Opt[Bpf], t.Opt[Bpf]) -> t.Tup[Spectrum, Spectrum]
         """
         return too Spectrums, one which satisfies the given criteria, 
@@ -280,11 +295,11 @@ class Spectrum(object):
         return (Spectrum(selected, skipsort=True),
                 Spectrum(rejected, skipsort=True))
 
-    def timewarp(self, timecurve):
+    def timewarp(self, timecurve:Bpf) -> Spectrum:
         partials = [p.timewarp(timecurve) for p in self.partials]
         return Spectrum(partials, skipsort=True)
 
-    def copy(self):
+    def copy(self) -> Spectrum:
         """
         We copy the partials list, since Partials themselves are inmutable
         but the list of them is not
@@ -301,15 +316,13 @@ class Spectrum(object):
         else:
             return out
         
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.partials)
 
-    def __add__(self, other):
-        # type: (Spectrum) -> Spectrum
+    def __add__(self, other) -> Spectrum:
         return merge(self, other)
 
-    def gain(self, gain):
-        # type: (float) -> Spectrum
+    def gain(self, gain:float) -> Spectrum:
         """
         Example: increase the amplitude of all breakpoints by 6dB
                  (which roughly duplicated the amplitude)
@@ -551,28 +564,25 @@ class Spectrum(object):
                                         method=method)
         
     def synthesize(self, sr:int=44100, start:float=-1, end:float=-1
-                   ) -> audiosample.Sample:
+                   ) -> np.ndarray:
         # type: (int, str) -> np.ndarray
         """
         Synthesize this Spectrum
 
-        * samplerate: the samplerate of the synthesized samples
-        * outfile: if given, the samples are saved to this path. The
-                   format is determined by the given extension.
-                   Supported formats: wav, aif, flac.
-                   wav, aif  -> flt32
-                   flac      -> int24
-
+        * sr: the samplerate of the synthesized samples
+        
         To write the samples to disk:
 
-        spectrum.synthesize(sr=44100).write("out.wav")    
+        import sndfileio
+        samples = spectrum.synthesize(sr=44100)
+        sndfileio.sndwrite(samples, 44100, "out.wav")
+
         """
         if start < 0: 
             start = self.t0
         if end < 0: 
             end = self.t1
-        samples = self._synthesize(sr, start=start, end=end)
-        return audiosample.Sample(samples, sr)
+        return self._synthesize(sr, start=start, end=end)
 
     def render(self, sndfile:str, sr:int=44100, start:float=-1, end:float=-1) -> None:
         """
