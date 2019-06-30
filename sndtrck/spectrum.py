@@ -84,9 +84,9 @@ class Spectrum(object):
     def __hash__(self):
         # type: () -> int
         s = self.__repr__()
-        numbreakpoints = sum(p.numbreakpoints for p in self)
-        return hash((s, numbreakpoints))
-
+        bps = tuple(p.numbreakpoints for p in self)
+        return hash((hash(s), hash(bps)))
+        
     @property
     def t1(self):
         t1 = self._t1
@@ -158,7 +158,7 @@ class Spectrum(object):
         return Spectrum(out, skipsort=True)
 
     def data_at(self, t:float, maxnotes=0, minamp=-50., mindur=0., minfreq=0., maxfreq=inf
-                 ) -> t.List[t.Tup[float, float]]:
+                ) -> t.List[t.Tup[float, float]]:
         """
         A quick way to query a spectrum at a given time
 
@@ -383,9 +383,8 @@ class Spectrum(object):
 
         method: None to use config, one of: "builtin", "spear"
         """
-        if method is None:
-            config = getconfig()
-            method = config['spectrum.show.method']
+        config = getconfig()
+        method = method or config['spectrum.show.method']
         if method == 'builtin':
             from . import interact
             return interact.interact(self)
@@ -448,17 +447,8 @@ class Spectrum(object):
                   which either start or end with a breakpoint
                   with an amplitude higher than 0
         """
-        matrices, labels = self.toarray()
+        matrices, labels = self.asarrays(), self.labels()
         io.tosdif(matrices, labels, outfile, rbep=rbep, fadetime=fadetime)
-
-    def toarray(self):
-        # type: () -> t.Tup[t.Iter[np.ndarray], t.List[int]]
-        """
-        Returns a tuple (matrices, labels), where matrices is an list of
-        matrix --> 2D array with columns [time freq amp phase bw]
-        """
-        logger.warning("Deprecated: use spectrum.asarrays(), spectrum.labels() ")
-        return self.asarrays(), self.labels()
 
     def asarrays(self):
         # type: () -> Generator[np.ndarray]
@@ -639,7 +629,7 @@ class Spectrum(object):
         """
         if self._f0 > 0:
             return self._f0
-        matrices, labels = self.toarray()
+        matrices = self.asarrays()
         self._f0 = io.estimatef0(matrices, minfreq, maxfreq, interval)
         return self._f0
 
@@ -680,10 +670,16 @@ class Spectrum(object):
         """
         cfg = getconfig()
         percentile = percentile if percentile is not None else cfg['breakpointgap.percentile']
-        partial_percentile = partial_percentile if partial_percentile is not None else \
-                             cfg['breakpointgap.partial_percentile']
+        partial_percentile = cfg.override(partial_percentile, 'breakpointgap.partial_percentile')
         return _estimate_gap(self, percentile=percentile, partial_percentile=partial_percentile)
         
+
+def _default(value, key, config=None):
+    config = config or getconfig()
+    if value is not None:
+        return value
+    return config[key]
+
 
 @lru_cache(maxsize=128)
 def _estimate_gap(sp:Spectrum, percentile:int, partial_percentile:int):

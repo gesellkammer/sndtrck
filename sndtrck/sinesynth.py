@@ -38,7 +38,9 @@ instr 2
     kfreq2 = sc_lag(kfreq, iPortTime)
     a0 = oscili(aamp, kfreq2)
     kgain *= gkMasterVol
-    a0 *= interp(kgain)
+    aenv linsegr 0, 0.2, 1, 0.2, 0
+    aenv *= interp(kgain)
+    a0 *= aenv
     outch 1, a0, 2, a0
 endin
 

@@ -27,6 +27,21 @@ class ConfigDict(NotifyDict):
     def set(self, key, value):
         return self.__setitem__(key, value)
 
+    def override(self, value, key):
+        """
+        If value is not None, return value directly
+        Otherwise, return config[value]
+
+        key must be present in the dict
+
+        This operation is the opposite of .get, in the sense that
+        the value given is queried before the value stored
+        in this config (config is not modified)
+        """
+        if value is not None:
+            return value
+        return self.get(key, default)
+
 
 DEFAULT_CONFIG = {
     'spectrum.allow_negative_times': False,
@@ -199,5 +214,6 @@ def resetconfig():
         os.remove(path)
     global _CONFIG
     _CONFIG = _wrapdict(DEFAULT_CONFIG)
+
 
 config = getconfig()

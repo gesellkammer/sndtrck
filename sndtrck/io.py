@@ -99,6 +99,9 @@ def fromtxt(path):
         # if this is the case, shift the second point to the right
         # a minimal amount
         if len(times) > 2:
+            # try to fix duplicate times. 
+            # TODO_ This is very naive, should 
+            # be fixed or just raise an error 
             for _ in range(10):
                 same = times[1:] - times[:-1] == 0   # type: np.ndarray
                 if same.any():
@@ -107,13 +110,13 @@ def fromtxt(path):
                 else:
                     break
         dur = times[-1] - times[0]
-        if dur > 0:
+        if dur <= 0:
+            skipped += 1
+        else:
             bws = phases = np.zeros_like(amps)
             partial = np.column_stack((times, freqs, amps, phases, bws))
             matrices.append(partial)
             labels.append(partial_id)
-        else:
-            skipped += 1
         npartials -= 1
     if skipped:
         logger.warning("Skipped %d partials without duration" % skipped)
@@ -139,14 +142,10 @@ def tospear(matrices, outfile, use_comma=False):
     f_write("partials-count %d\n"%len(arraylist))
     f_write("partials-data\n")
     for i, m in enumerate(arraylist):
-        # times, freqs = p.freq.points()
-        # _, amps = p.amp.points()
-        # data = column_stack((times, freqs, amps)).flatten()
         data = m[:, 0:3].flatten()
         t0 = data[0, 0]
         t1 = data[-1, 0]
         header = "%d %d %f %f\n" % (i, len(m), t0, t1)
-        # datastr = " ".join(b"%f" % n for n in data)
         datastr=" ".join("%f" % n for n in data)
         if use_comma:
             header = header.replace(".", ",")
@@ -350,6 +349,7 @@ def estimatef0(matrices, minfreq=30, maxfreq=3000, interval=0.1,
 
 def open_spectrum_in_spear(filepath, wait=True):
     # type: (str, bool) -> None
+
     def osx(path):
         if not wait:
             raise NotImplemented("waiting is not implemented in OSX")
@@ -361,7 +361,7 @@ def open_spectrum_in_spear(filepath, wait=True):
     def linux(path):
         locations = ["~/.wine/drive_c/Program Files (x86)/SPEAR/spear.exe"]
         for location in locations:
-            spearexe = os.path.abspath(os.path.expanduser(location))
+            spearexe = normalizepath(location)
             if os.path.exists(spearexe):
                 break
         else:
