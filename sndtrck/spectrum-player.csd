@@ -138,7 +138,7 @@ endop
 
 instr ctrl
 	kbutton_play chnget "play"
-	if changed(kbutton_play) == 1 then
+	if changed2(kbutton_play) == 1 then
 		setPlay(kbutton_play)
 	endif
 	
@@ -148,12 +148,12 @@ instr ctrl
 	
 	kedithead0 chnget "edithead"	
 	kedithead lineto kedithead0, 0.05
-	if changed(kedithead) == 1 then
+	if changed2(kedithead) == 1 then
 		setEdithead(kedithead * gkdur)
 	endif
 	
 	kspeed chnget "speed"
-	if changed(kspeed)== 1 then
+	if changed2(kspeed)== 1 then
 		gkSpeed = kspeed
 	endif
 	
@@ -195,7 +195,7 @@ instr oscils
 	; >>>>>>>>> perf <<<<<<<<<<<<
 perf:
 	
-	if (changed(gkplay) == 1) || (changed(gkedithead) == 1) then
+	if (changed2(gkplay, gkedithead) == 1) then
 		gkplayhead = gkedithead
 	endif
 
@@ -298,28 +298,19 @@ instr init
 endin
 
 instr setEditheadLine
-	idur = p4
-	idest = p5
+	idur = p3
+	idest = p4
 	iorig = i(gkedithead)
 	kpos linseg iorig, idur, idest
 	setEdithead(kpos)
-	ktime = timeinsts()
-	if ktime >= idur then
-		turnoff 
-	endif
 endin
 
 instr setPlayheadLine
-	idur = p4
-	idest = p5
+	idest = p4
 	iorig = i(gkplayhead)
 	
-	kpos linseg iorig, idur, idest
+	kpos linseg iorig, p3, idest
 	gkplayhead = kpos
-	ktime = timeinsts()
-	if ktime >= idur then
-		turnoff 
-	endif
 endin
 
 
@@ -354,12 +345,12 @@ instr osc
 	
 	kk OSClisten giosc, "/setposline", "ff", k0, k1
 	if (kk == 1) then
-		event "i", "setEditheadLine", 0, -1, k1, k0
+		event "i", "setEditheadLine", 0, k1, k0
 	endif
 
 	kk OSClisten giosc, "/setplayhead", "ff", k0, k1
 	if (kk == 1) then
-		event "i", "setPlayheadLine", 0, -1, k1, k0
+		event "i", "setPlayheadLine", 0, k1, k0
 	endif
 
 	; args: pos
@@ -409,7 +400,7 @@ instr osc
 	ksendpos, kplayhead changedRatelimit gkplayhead, metro(giOscOutFreq)
 	OSCsend ksendpos, "127.0.0.1", ginotifyport, "/pos", "f", gkplayhead
 
-	kplaying_changed = changed(gkplay)
+	kplaying_changed = changed2:k(gkplay)
 	OSCsend kplaying_changed, "127.0.0.1", ginotifyport, "/play", "i", gkplay
 	
 endin
@@ -452,14 +443,4 @@ i "osc" 0 -1
 f0 36000
 </CsScore>
 </CsoundSynthesizer>
-
-
-
-
-
-
-
-
-
-
 

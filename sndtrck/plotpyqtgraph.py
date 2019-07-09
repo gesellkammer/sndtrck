@@ -1,5 +1,6 @@
 import sys
 from math import inf
+from contextlib import contextmanager
 
 from pyqtgraph import GraphicsObject, getConfigOption, Point
 from pyqtgraph.Qt import QtGui, QtCore
@@ -8,6 +9,7 @@ import pyqtgraph as pg
 
 from bpf4 import bpf
 from emlib.pitchtoolsnp import amp2db_np, f2m_np
+from emlib import lib
 from numpyx import minmax1d
 import logging
 from functools import lru_cache
@@ -119,7 +121,6 @@ class MultiColouredLine(GraphicsObject):
         #         return
         if self.picture is None:
             self.picture = self.generatePicture()
-        # if getConfigOption('antialias') is True:
         if self._antialias:
             p.setRenderHint(p.Antialiasing)
         self.picture.play(p)
@@ -194,16 +195,55 @@ def _colormapHeat(x, alpha):
     return int(r), int(g), int(b), alpha
 
 
+class SndtrckPlotWindow(pg.PlotWindow):
+    def __init__(self, *args, **kws):
+        super().__init__(*args, **kws)
+        self._mousex = 0
+        self._mousey = 0
+        self.useOpenGL(True)
+
+    def hoverEvent(self, event):
+        if event.isExit():
+            return
+        pos = event.pos()
+        self._mousex = pos.x()
+        self._mousey = pos.y()
+
+
+class SndtrckPlotWidget(pg.PlotWidget):
+    def __init__(self, *args, **kws):
+        super().__init__(*args, **kws)
+        self._mousex = 0
+        self._mousey = 0
+        self.useOpenGL(True)
+
+    def hoverEvent(self, event):
+        print(event)
+
+        if event.isExit():
+            return
+        pos = event.pos()
+        self._mousex = pos.x()
+        self._mousey = pos.y()
+        
 def _getview(plotview=True):
-    if not plotview:
-        w = pg.GraphicsWindow()
-        w.useOpenGL(True)    
-        w.setWindowTitle('pyqtgraph example: GraphItem')
-        v = w.addViewBox()
-        v.setAspectLocked()
-    else:
-        v = pg.plot()
-    return v
+    if plotview:
+        # this is copyied from pg.plot, we copy that to use our own PlotWindow to
+        # override the hover callback and update the mouse
+        pg.mkQApp()
+        w = SndtrckPlotWindow(
+            title="plot",
+            name="plot")
+        pg.plots.append(w)
+        w.show()
+        return w
+
+    w = pg.GraphicsWindow()
+    w.useOpenGL(True)    
+    w.setWindowTitle('pyqtgraph example: GraphItem')
+    v = w.addViewBox()
+    v.setAspectLocked()
+    return w
 
 
 _db2lin = bpf.linear(-120, 0.001, -60, 0.1, -12, 0.75, -3, 0.85, 0, 1)
@@ -213,6 +253,19 @@ _bw2lin = bpf.linear(0, 0.1,
                      0.95, 0.8, 
                      1, 0.99)
 # _bw2lin = bpf.linear(0, 0.99, 0.5, 0.5, 1, 0.1)
+
+@contextmanager
+def qtapp(ownapp=False):
+    if ownapp:
+        app = QtGui.QApplication([])
+    else:
+        app = QtCore.QCoreApplication.instance()
+        if app is None:
+            app = QtGui.QApplication([])
+    yield app
+    if ownapp or not lib.ipython_qt_eventloop_started():
+        print("*************************************** starting eventloop")
+        app.exec_()
 
 
 def plotpartials(v, partials, allpens, *, widget=None,
@@ -274,11 +327,14 @@ def makepens(numcolors, alpha, linewidth):
             for i in range(numcolors)]
 
 
-def set_temp_options(**options):
+def set_temp_options(**options) -> dict:
     oldopts = {key:pg.getConfigOption(key) for key in options}
     validoptions = {k:v for k, v in options.items() if v is not None}
     pg.setConfigOptions(**validoptions)
     return oldopts
+
+
+_plotapp = None
 
 
 def plotspectrum(s, *, downsample=1, alpha:int=255, linewidth:int=2, 
@@ -287,21 +343,26 @@ def plotspectrum(s, *, downsample=1, alpha:int=255, linewidth:int=2,
     """
     kind: amp or bw
     pitchmode: freq or note
+
+    s: the spectrum to plot
     """
+    from . import spectrum
+    assert isinstance(s, spectrum.Spectrum)
     assert pitchmode in ("freq", "note")
     oldopts = set_temp_options(background=background)
-    v = _getview()
-    allpens = makepens(numcolors, alpha, linewidth)
-    plot = plotpartials(v, s, allpens, exp=exp, downsample=downsample, 
-                        antialias=antialias, kind=kind, pitchmode=pitchmode)
-    rect = QtCore.QRect(s.t0, 0, s.t1, 6000)
-    v.setRange(rect)
-    v.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=24000)
-    pg.setConfigOptions(**oldopts)
+    with qtapp():
+        v = pg.plot(title="plot")
+        allpens = makepens(numcolors, alpha, linewidth)
+        plot = plotpartials(v, s, allpens, exp=exp, downsample=downsample, 
+                            antialias=antialias, kind=kind, pitchmode=pitchmode)
+        rect = QtCore.QRect(s.t0, 0, s.t1, 6000)
+        v.setRange(rect)
+        v.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=24000)
+        pg.setConfigOptions(**oldopts)
     return v, plot
 
 
 def startloop():
     if (sys.flags.interactive != 1) or not hasattr(QtCore, 'PYQT_VERSION'):
-        logger.debug("startloop: starting Qt loop")
+        logger.info("startloop: starting Qt loop")
         QtGui.QApplication.instance().exec_()

@@ -13,7 +13,7 @@ from . import typehints as t
 import logging
 
 from .const import UNSETLABEL
-from .util import interpol_linear
+from .util import interpol_linear, checktype
 
 
 logger = logging.getLogger("sndtrck")
@@ -711,15 +711,18 @@ class Partial(object):
         return Partial(times, freqs, self.amps, self.phases, self.bws, label=self.label)
         
     def quantized(self,
-                  pitchgrid: t.U[float, np.ndarray]=None,
-                  dbgrid:t.U[float, np.ndarray]=None) -> 'Partial':
+                  pitchgrid: t.U[float, np.ndarray] = None,
+                  dbgrid: t.U[float, np.ndarray] = None
+                  ) -> 'Partial':
         """
         Returns a new partial quantized to the given grids
 
-        pitchgrid: the resolution of the pitch grid, or a seq. of possible pitches
-                    (fractional midinotes). Use None to skip freq. quantization
-        dbgrid: the resolution of the amp grid, in dB, or a list of possible amps,
-                 in dB. Use None to not quantize amps
+        pitchgrid: 
+            the resolution of the pitch grid, or a seq. of possible pitches
+            (fractional midinotes). Use None to skip freq. quantization
+        dbgrid: 
+            the resolution of the amp grid, in dB, or a list of possible amps,
+            in dB. Use None to not quantize amps
         
         * NB1: call .simplified to remove redundant breakpoints after quantization
         * NB2: to generate a list of dB as expected in dbgrid from a dynamic curve 
@@ -762,6 +765,9 @@ class Partial(object):
 
         Returns a new Partial
         """
+        checktype(pitchdelta, (int, float))
+        checktype(dbdelta, (int, float))
+        checktype(bwdelta, (int, float))
         T, F, A, B = self.times, self.freqs, self.amps, self.bws
         if B is None:
             B = getzeros1(T.size)
@@ -976,7 +982,7 @@ def concat(partials, fade=0.005):
 
 # -------------------------- utilities ----------------------------
 
-def _breakpoint_deviates(b0, b1, b2, dbdelta, pitchdelta, bwdelta):
+def _breakpoint_deviates(b0, b1, b2, dbdelta: float, pitchdelta: float, bwdelta: float):
     """
     True if b1 deviates from the interpolation of b0 and b2
     

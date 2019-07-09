@@ -1,16 +1,15 @@
 SNDTRCK
 =======
 
-A simple data-type and io routines for audio partial tracking.
+Partial tracking in python 3
 
 ![plot](img/example-plot.jpg)
-
-**Needs python >= 3.6**
 
 # Dependencies
 
 ## Mandatory
 
+* python >= 3.7
 * numpy
 * [bpf4]: interpolation curves
 * [sndfileio]: simple API for reading and writing sound-files
@@ -23,7 +22,7 @@ A simple data-type and io routines for audio partial tracking.
 
 # Installation
 
-We assume that `pip` points to your current python >= 3.6 installation
+We assume that `pip` points to your current python >= 3.7 installation. Otherwise use `pip3` and `python3`
 
 ## Linux
 
@@ -36,7 +35,7 @@ We assume that `pip` points to your current python >= 3.6 installation
 ## OSX
 
     $ brew install fftw
-    $ pip install -r requirements.txt
+    $ pip install -r requirements.txt [--user]
     $ git clone https://github.com/gesellkammer/sndtrck
     $ cd sndtrck
     $ python setup.py install
@@ -81,13 +80,13 @@ spectrum.write("spectrum.sdif")
 
 # Transcription
 
-Go to [trnscrb] for automatic transcription of spectra into musical notation
+Go to [sndscribe] for automatic transcription of spectra into musical notation
 
 [bpf4]: https://github.com/gesellkammer/bpf4
 [loristrck]: https://github.com/gesellkammer/loristrck
 [sndfileio]: https://github.com/gesellkammer/sndfileio
 [pandas]: http://pandas.pydata.org/
-[trnscrb]: https://github.com/gesellkammer/trnscrb
+[sndscribe]: https://github.com/gesellkammer/sndscribe
 [pyqtgraph]: http://pyqtgraph.org
 
 # License

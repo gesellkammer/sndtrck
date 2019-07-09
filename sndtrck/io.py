@@ -11,7 +11,7 @@ from . import backend_pysdif
 from .errors import *
 from .util import *
 import bpf4 as bpf
-from typing import Iterable as I, Optional as Opt, Tuple as Tup, List
+from .typehints import *
 from .backend_loris import analyze as analyze
 
 BPF = bpf.BpfInterface
@@ -35,8 +35,11 @@ For soundfile io, use sndfileio directly
 logger = logging.getLogger("sndtrck")
 
 
-def tosdif(matrices, labels, outfile, rbep=True, fadetime=0):
-    # type: (I[np.ndarray], I[int], str, bool, float) -> None
+def tosdif(matrices: Iter[np.ndarray], 
+           labels: List[int], 
+           outfile: str, 
+           rbep=True, 
+           fadetime=0.) -> None:
     """
     Write this spectrum as SDIF
 
@@ -54,8 +57,7 @@ def tosdif(matrices, labels, outfile, rbep=True, fadetime=0):
     return backend.write_sdif(outfile, matrices, labels=labels, rbep=rbep, fadetime=fadetime)
 
 
-def fromsdif(sdiffile):
-    # type: (str) -> Tup[List[np.ndarray], List[int]]
+def fromsdif(sdiffile: str) -> Tup[List[np.ndarray], List[int]]:
     """
     Reads a SDIF file (1TRC or RBEP)
 
@@ -73,8 +75,7 @@ def fromsdif(sdiffile):
     raise FunctionalityNotAvailable("No Backend implements SDIF reading")
 
 
-def fromtxt(path):
-    # type: (str) -> Tup[List[np.ndarray], List[int]]
+def fromtxt(path: str) -> Tup[List[np.ndarray], List[int]]:
     """
     Read a Spectrum from a txt file in the format used by SPEAR
     Returns a tuple (matrices, labels) to be passed tp fromarray
@@ -123,8 +124,7 @@ def fromtxt(path):
     return matrices, labels
 
 
-def tospear(matrices, outfile, use_comma=False):
-    # type: (I[np.ndarray], str, bool) -> None
+def tospear(matrices: Iter[np.ndarray], outfile: str, use_comma=False) -> None:
     """
     writes the partials in the text format defined by SPEAR
     (Export Format/Text - Partials)
@@ -155,8 +155,7 @@ def tospear(matrices, outfile, use_comma=False):
         f_write('\n')
 
 
-def tonpz(matrices, labels, outfile):
-    # type: (I[np.ndarray], List[int], str) -> None
+def tonpz(matrices: Iter[np.ndarray], labels: List[int], outfile: str) -> None:
     """
     write the spectrum as a numpy .npz file
     """
@@ -178,8 +177,7 @@ def tonpz(matrices, labels, outfile):
     np.savez(outfile, metadata=metadata, labels=labels, **partials)
 
 
-def fromnpz(path):
-    # type: (str) -> Tup[List[np.ndarray], List[int]]
+def fromnpz(path: str) -> Tup[List[np.ndarray], List[int]]:
     npz = np.load(path)
     labels = npz['labels']
     metadata = npz['metadata']
@@ -200,8 +198,7 @@ def fromnpz(path):
 
 
 # noinspection PyUnresolvedReferences
-def tohdf5(matrices, labels, outfile):
-    # type: (I[np.ndarray], I[int], str) -> None
+def tohdf5(matrices: Iter[np.ndarray], labels: Iter[int], outfile: str) -> None:
     """
     save to outfile as HDF5
 
@@ -248,8 +245,7 @@ def tohdf5(matrices, labels, outfile):
 
 
 # noinspection PyUnresolvedReferences
-def fromhdf5(path):
-    # type: (str) -> Tup[List[np.ndarray], List[int]]
+def fromhdf5(path: str) -> Tup[List[np.ndarray], List[int]]:
     """
     Reads a spectrum from a HDF5 file.
     Returns a tuple (partials, labels)
@@ -289,8 +285,7 @@ def fromhdf5(path):
     store.close()
     return matrices, labels
 
-def synthesize(matrices, samplerate=44100):
-    # type: (I[np.ndarray], int) -> np.ndarray
+def synthesize(matrices: Iter[np.ndarray], samplerate=44100) -> np.ndarray:
     """
     Synthesize a Spectrum
 
@@ -310,9 +305,8 @@ def synthesize(matrices, samplerate=44100):
 EstimateF0 = namedtuple("EstimateF0", ["freq", "confidence"])
 
 
-def estimatef0(matrices, minfreq=30, maxfreq=3000, interval=0.1,
-               minconfidence=None):
-    # type: (I[np.ndarray], float, float, float, bool) -> EstimateF0
+def estimatef0(matrices: Iter[np.ndarray], minfreq=30, maxfreq=3000, interval=.1,
+               minconfidence=None) -> EstimateF0:
     """
     Estimate the fundamental of this spectrum
 

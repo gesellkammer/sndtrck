@@ -12,3 +12,4 @@ from . import synthesis
 from .analysis import *
 from . import fx
 from .config import getconfig, resetconfig
+from .version import __version__

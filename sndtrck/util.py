@@ -4,6 +4,12 @@ import numpy as np
 import pysndfile
 from .config import config
 
+
+def checktype(x, types):
+    if not isinstance(x, types):
+        raise TypeError(f"Expected {types} but got {x} ({type(x)})")
+
+
 def aslist(x):
     if isinstance(x, list):
         return x

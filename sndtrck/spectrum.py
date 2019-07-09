@@ -51,7 +51,7 @@ class Spectrum(object):
         See Also: analyze
         """
         self._t1 = -1.0             
-        self._f0 = -1.0             
+        self._f0 = None            
         self.packed: bool = packed     
         self._sorted: bool = skipsort  
         self.partials = aslist(partials)
@@ -108,8 +108,7 @@ class Spectrum(object):
         # type: () -> t.Iter[Partial]
         return iter(self.partials)
 
-    def __eq__(self, other):
-        # type: (Spectrum) -> bool
+    def __eq__(self, other: Spectrum) -> bool:
         if not isinstance(other, Spectrum):
             raise TypeError("Can only compare to another Spectrum")
         if self is other:
@@ -119,12 +118,10 @@ class Spectrum(object):
                 return False
         return True
 
-    def partials_at(self, t):
-        # type: (float) -> Spectrum
+    def partials_at(self, t:float) -> Spectrum:
         return self.partials_between(t, t + 1e-9, crop=False)
 
-    def partials_between(self, t0, t1, crop=False, fade=0):
-        # type: (float, float, bool) -> Spectrum
+    def partials_between(self, t0: float, t1: float, crop=False, fade=0.0) -> Spectrum:
         out = []
         if crop:
             t0 += fade
@@ -228,7 +225,6 @@ class Spectrum(object):
         return Spectrum(out, skipsort=self._sorted)
 
     def equalize(self, curve:Bpf, mindb=-90.) -> Spectrum:
-        # type: (Bpf, float) -> Spectrum
         """
         Equalize all partials in this Spectrum
         
@@ -243,7 +239,6 @@ class Spectrum(object):
         return Spectrum(filtered, skipsort=self._sorted)
 
     def filtercurve(self, freq2minamp:Bpf=None, freq2mindur:Bpf=None) -> t.Tup[Spectrum, Spectrum]:
-        # type: (t.Opt[Bpf], t.Opt[Bpf]) -> t.Tup[Spectrum, Spectrum]
         """
         return too Spectrums, one which satisfies the given criteria, 
         and the residuum so that both reconstruct the original Spectrum
@@ -332,7 +327,7 @@ class Spectrum(object):
         partials = [p.gain(gain) for p in self.partials]
         return Spectrum(partials, skipsort=True)
 
-    def edit(self):
+    def edit(self) -> Spectrum:
         """ edit the spectrum with an external editor, returns
         the resulting spectrum
 
@@ -347,8 +342,8 @@ class Spectrum(object):
         time.sleep(1)
         return readspectrum(outfile)
         
-    def plot(self, linewidth=None, downsample=None, antialias=True, exp=1, showpoints=False,
-             kind='amp', pitchmode='freq', **kws):
+    def plot(self, linewidth:int=None, downsample:int=None, antialias=True, exp=1.0, showpoints=False,
+             kind='amp', pitchmode='freq', **kws) -> None:
         """
         Call the default plotting routine. For more customizations, do
         
@@ -404,8 +399,7 @@ class Spectrum(object):
         io.open_spectrum_in_spear(filename, wait=True)
         return filename
 
-    def write(self, outfile):
-        # type: (str) -> None
+    def write(self, outfile:str) -> None:
         """
         Write the spectrum to disk. The format is given by the extension
 
@@ -430,8 +424,7 @@ class Spectrum(object):
         else: 
             raise ValueError("Format not supported")
         
-    def writesdif(self, outfile, rbep=True, fadetime=0.0):
-        # type: (str, bool, float) -> None
+    def writesdif(self, outfile: str, rbep=True, fadetime=0.0) -> None:
         """
         Write this spectrum to sdif
 
@@ -450,31 +443,26 @@ class Spectrum(object):
         matrices, labels = self.asarrays(), self.labels()
         io.tosdif(matrices, labels, outfile, rbep=rbep, fadetime=fadetime)
 
-    def asarrays(self):
-        # type: () -> Generator[np.ndarray]
+    def asarrays(self) -> t.Generator[np.ndarray]:
         """
         Convert each partial to an array, returns a list of such arrays
         """
-        matrices = (partial.toarray() for partial in self.partials)
-        return matrices
-
-    def labels(self):
-        # type: () -> t.List[int]
+        return (partial.toarray() for partial in self.partials)
+        
+    def labels(self) -> t.List[int]:
         """
         Returns the labels (an int) of all partials, as a list
         """
         return [p.label for p in self.partials]
 
-    def resampled(self, dt):
-        # type: (float) -> Spectrum
+    def resampled(self, dt: float) -> Spectrum:
         """
         Returns a new Spectrum, resampled using dt as sampling period
         """
         partials = [p.resampled(dt) for p in self.partials]
         return Spectrum(partials, skipsort=True)
         
-    def fit_between(self, t0, t1):
-        # type: (float, float) -> Spectrum
+    def fit_between(self, t0: float, t1: float) -> Spectrum:
         """
         Return a new Spectrum, fitted between the given times
         """
@@ -485,8 +473,7 @@ class Spectrum(object):
         postoffset = t0
         return self.timescale(factor, preoffset=preoffset, postoffset=postoffset)
 
-    def timescale(self, factor, preoffset=0.0, postoffset=0.0):
-        # type: (float, float, float) -> Spectrum
+    def timescale(self, factor: float, preoffset=0.0, postoffset=0.0) -> Spectrum:
         """
         To map u0, u1 to v0, v1:
 
@@ -507,37 +494,41 @@ class Spectrum(object):
             newpartials.append(partial2)
         return Spectrum(newpartials, skipsort=True)
 
-    def freqwarp(self, curve):
-        # type: (t.Func1) -> Spectrum
+    def freqwarp(self, curve: t.Func1) -> Spectrum:
         """
         curve: maps freq to freq
         """
         return Spectrum([p.freqwarp(curve) for p in self.partials], skipsort=True)
 
-    def freqwarp_dynamic(self, gradient):
+    def freqwarp_dynamic(self, gradient: t.Fun[[float, float], float]) -> Spectrum:
         # type: (Fun[[float, float], float]) -> Spectrum
         """
-        gradient: a callable of the form gradient(t, f) -> f
+        gradient: 
+            a callable of the form func(time, freq) -> freq
+            Maps freq to freq, varying in time
         """
         return Spectrum([p.freqwarp_dynamic(gradient) for p in self.partials], 
                         skipsort=True)
 
-    def transpose(self, interval):
-        # type: (U[float, t.Func1]) -> Spectrum
+    def transpose(self, interval: t.U[float, t.Func1]) -> Spectrum:
+        """
+        interval:
+            either a interval as a float, or a function func(t) -> interval
+            to perform a time dependent transposition
+        """
         partials = [p.transpose(interval) for p in self.partials]
         return Spectrum(partials, skipsort=True)
     
-    def shifted(self, dt=0, df=0):
-        # type: (float, U[float, t.Func1], U[float, t.Func1]) -> Spectrum
+    def shifted(self, dt: t.U[float, t.Func1] = 0, 
+                      df: t.U[float, t.Func1] = 0) -> Spectrum:
         """
-        Return a new Spectrum shifted in time and/or freq. Alternatively to `df`,
-        `interval` sets a transposition interval in semitones (can be dynamic)
+        Return a new Spectrum shifted in time and/or freq. 
 
-        dt: a constant time
-        df: all frequencies are shifted by this ammount (a scalar or a bpf)
+        dt: 
+            an amount of time to shift each breakpoint (scalar or func(t) -> dt)
+        df: 
+            all frequencies are shifted by this ammount (scalar or func(t) -> df)
         """
-        if df and interval:
-            raise ValueError("either `df` or `interval` can be set at one time")
         partials = [p.shifted(dt=dt, df=df) for p in self.partials]
         return Spectrum(partials, skipsort=True)
 
@@ -555,18 +546,12 @@ class Spectrum(object):
         
     def synthesize(self, sr:int=44100, start:float=-1, end:float=-1
                    ) -> np.ndarray:
-        # type: (int, str) -> np.ndarray
         """
         Synthesize this Spectrum
 
         * sr: the samplerate of the synthesized samples
         
-        To write the samples to disk:
-
-        import sndfileio
-        samples = spectrum.synthesize(sr=44100)
-        sndfileio.sndwrite(samples, 44100, "out.wav")
-
+        See .render to render this spectrum to disk
         """
         if start < 0: 
             start = self.t0
@@ -587,8 +572,8 @@ class Spectrum(object):
         from . import synthesis
         return synthesis.render_sndfile(self, sr=sr, outfile=sndfile, start=start, end=end)
 
-    def play(self, start=-1, end=0, loop=False, speed=1, play=True, gain=1):
-        # type: (float, float, bool, float) -> synthesis.SpectrumPlayer
+    def play(self, start=-1., end=0., loop=False, speed=1., play=True, gain=1.
+            ) -> 'synthesis.SpectrumPlayer':
         """
         Play the spectrum in real-time. Returns a SpectrumPlayer, 
         which can be controlled while sound is playing
@@ -612,8 +597,7 @@ class Spectrum(object):
                                           gain=gain, verbose=verbose)
         return player
         
-    def estimatef0(self, minfreq, maxfreq, interval=0.1):
-        # type: (float, float, float) -> io.EstimateF0
+    def estimatef0(self, minfreq:float, maxfreq:float, interval=.1) -> io.EstimateF0:
         """
         Estimate the fundamental of this spectrum
 
@@ -627,7 +611,7 @@ class Spectrum(object):
                     Values of 0.9-1 represent high confidence, 0 represents no partial
                     at time `t`, values in between represent unvoiced sounds 
         """
-        if self._f0 > 0:
+        if self._f0 is not None:
             return self._f0
         matrices = self.asarrays()
         self._f0 = io.estimatef0(matrices, minfreq, maxfreq, interval)

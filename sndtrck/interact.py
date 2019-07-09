@@ -2,10 +2,9 @@ import sys
 import operator as _op
 from functools import lru_cache
 import logging
-from typing import Optional as Opt
 
 import pyqtgraph as pg
-from pyqtgraph import GraphicsObject, getConfigOption, Point
+from pyqtgraph import GraphicsObject, Point
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph.functions as fn
 
@@ -13,6 +12,7 @@ from emlib.pitchtools import db2amp, f2n
 
 
 from . import plotpyqtgraph as ppg
+from .plotpyqtgraph import qtapp
 from .synthesis import SpectrumPlayer
 from .sinesynth import SineSynth, MultiSineSynth
 from .spectralsurface import SpectralSurface
@@ -23,7 +23,7 @@ from . import spectrum as _sp
 logger = logging.getLogger("sndtrck")
 
 
-def interact(sp, updaterate=0, block=False):
+def interact(sp, updaterate=0, block=False, ownapp=False):
     # type: (_sp.Spectrum, int, bool) -> SpectrumEditor
     """
     updaterate: the updaterate in Hz. Use 0 for configurable default (key='spectrumeditor.updaterate')
@@ -36,9 +36,10 @@ def interact(sp, updaterate=0, block=False):
     """
     if updaterate <= 0:
         updaterate = getconfig()['spectrumeditor.updaterate']
-    se = SpectrumEditor(sp, updaterate=updaterate)
-    if block:
-        se.wait_until_closed()
+    with qtapp(ownapp):
+        se = SpectrumEditor(sp, updaterate=updaterate)
+        if block:
+            se.wait_until_closed()
     return se
 
 
@@ -59,34 +60,6 @@ class Cursor(GraphicsObject):
         if ax == 0:
             return self.pos, self.pos
         return 0, self.y1
-
-    def boundingRect2(self):
-        if self._boundingRect is not None:
-            return self._boundingRect
-        # (xmn, xmx) = self.dataBounds(ax=0)
-        # (ymn, ymx) = self.dataBounds(ax=1)
-        xmn = xmx = self.pos
-        ymn = 0
-        ymx = self.y1
-        px = py = 0.0
-        # pxPad = self.pixelPadding()
-        pxPad = 1
-        if pxPad > 0:
-            # determine length of pixel in local x, y directions
-            px, py = self.pixelVectors()
-            try:
-                px = 0 if px is None else px.length()
-            except OverflowError:
-                px = 0
-            try:
-                py = 0 if py is None else py.length()
-            except OverflowError:
-                py = 0
-            # return bounds expanded by pixel size
-            px *= pxPad
-            py *= pxPad
-        self._boundingRect = QtCore.QRectF(xmn-px, ymn-py, (2*px)+xmx-xmn, (2*py)+ymx-ymn)
-        return self._boundingRect
 
     def boundingRect(self):
         if self._boundingRect is not None:
@@ -114,7 +87,6 @@ class Cursor(GraphicsObject):
             self._line = line = QtCore.QLineF(0.0, br.bottom(), 0.0, br.top())
         p.drawLine(line)
         
-
     def setPos(self, pos):
         if pos != self.pos:
             self.pos = pos
@@ -128,20 +100,23 @@ class Cursor(GraphicsObject):
 class _SpectrumWidget:
 
     def __init__(self, full=True):
-        app_created = False
-        app = QtCore.QCoreApplication.instance()
-        if app is None:
-            logger.debug("creating QApplication")
-            app = QtGui.QApplication([])
-            app_created = True
-        app.references = set()
+        # app = QtCore.QCoreApplication.instance()
+        self.app_created = False
+        app = None
+        #if app is None:
+        #    logger.debug("************************** creating QApplication")
+        #    app = QtGui.QApplication([])
+        #    self.app_created = True
+        #else:
+        #    self.app_created = False
         self.plotview = None
         self.partialsplot = None
         self.plotparams = {}
         self._app = app
-        self.app_created = app_created
-
+        
         if not full:
+            print("******************* not full ******************* ")
+            raise RuntimeError("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~")
             self.plotview = pg.plot()
             self._fullwidget = False
             self._root = self.plotview
@@ -241,10 +216,12 @@ class _SpectrumWidget:
                                  maximum=999)
 
         self.notesbtn = QtGui.QPushButton("Notes")
-        layout.addWidget(self.notesbtn, row, 0); row += 1
+        layout.addWidget(self.notesbtn, row, 0)
+        row += 1
         
         self.quitbtn = QtGui.QPushButton("Close")
-        layout.addWidget(self.quitbtn, row, 0); row += 1
+        layout.addWidget(self.quitbtn, row, 0)
+        row += 1
         
     def show(self):
         self._win = self._root.show()
@@ -272,12 +249,13 @@ class _SpectrumWidget:
             linewidth = config['spectrumeditor.linewidth']
         if exp < 0:        
             exp = config['spectrumeditor.exp']
-        if numcolors < 0:  
+        if numcolors < 0:
             numcolors = config['spectrumeditor.numcolors']
         oldopts = ppg.set_temp_options(background=background)
         v = self.plotview
         if v is None:
             self.plotview = v = pg.PlotWidget()
+            # pg.SignalProxy(v.scene().sigMouseMoved, rateLimit=30, slot=lambda event: print(event))
             self._layout.addWidget(self.plotview, 0, 2, 20, 1)
         allpens = ppg.makepens(numcolors, alpha, linewidth)
         if self.partialsplot is None:
@@ -291,9 +269,11 @@ class _SpectrumWidget:
             numcolors=numcolors, background=background, kind=kind
         )
 
+
     def close(self):
         if self.app_created:
-            self._app.quit()
+            logger.debug("********************* quitting application")
+            # self._app.quit()
         
     def execloop(self):
         if self.app_created:
@@ -313,8 +293,7 @@ def plotspectrum(s: _sp.Spectrum, *,
 
 
 class SpectrumEditor:
-    def __init__(self, sp, updaterate=12, numloudest=None):
-        # type: (_sp.Spectrum, int, Opt[int]) -> None
+    def __init__(self, sp: _sp.Spectrum, updaterate=12, numloudest:int=None) -> None:
         cfg = getconfig()
         self.spectrum = sp
         self.playing = False
@@ -364,8 +343,10 @@ class SpectrumEditor:
 
         # Edithead
         self._editcursor = pg.InfiniteLine(
-            movable=True, pos=self.playheadpos,
-            bounds=(sp.t0, sp.t1), pen=pg.mkPen("#56ff7688", width=2))
+            movable=True, 
+            pos=self.playheadpos,
+            bounds=(sp.t0, sp.t1), 
+            pen=pg.mkPen("#56ff7688", width=2))
         self._editcursor.setZValue(20)
         self.view.addItem(self._editcursor)
 
@@ -417,7 +398,7 @@ class SpectrumEditor:
 
         self._set_callbacks()
         self._plot.setFocus()
-        self.ui.execloop()
+        # self.ui.execloop()
 
     def _set_callbacks(self) -> None:
         self.ui.speed_spin.valueChanged.connect(self.set_speed)

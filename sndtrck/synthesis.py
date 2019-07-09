@@ -1,5 +1,6 @@
 import tempfile
 import liblo
+import time
 import atexit
 import os
 import sys
@@ -268,20 +269,21 @@ class SpectrumPlayer:
         if verbose is None:
             verbose = logger.level <= logging.DEBUG
 
-        subproc = _csound_player_process(mtxfile, sr=sr, 
-                                         backend=backend, 
-                                         autoplay=autoplay, 
-                                         looping=looping,
-                                         exitwhendone=exitwhendone, 
-                                         oscport=self.oscport, 
-                                         speed=speed, 
-                                         start=start, 
-                                         end=end,
-                                         oscnotify=notifyport,
-                                         oscfreq=oscfreq,
-                                         gain=gain,
-                                         verbose=verbose)
-        self.process = subproc
+        self.process = _csound_player_process(
+            mtxfile, 
+            sr=sr, 
+            backend=backend, 
+            autoplay=autoplay, 
+            looping=looping,
+            exitwhendone=exitwhendone, 
+            oscport=self.oscport, 
+            speed=speed, 
+            start=start, 
+            end=end,
+            oscnotify=notifyport,
+            oscfreq=oscfreq,
+            gain=gain,
+            verbose=verbose)
         self._exited = False
         self._onpos = on_pos
         self._onplay = on_play
@@ -316,9 +318,11 @@ class SpectrumPlayer:
         if self._interactive:
             liblo.send(self.oscport, "/exit", 1)
             self.oscserver.free()
-        _deferred(0.25, lambda proc=self.process: proc.terminate() if proc is not None else None)
-        self.process = None
-
+        if self.process is not None:
+            time.sleep(0.1)
+            self.process.terminate()
+            self.process = None
+        
     def set_position(self, t, dur=0):
         if dur == 0:
             liblo.send(self.oscport, "/setpos", t)
