@@ -86,6 +86,10 @@ class Spectrum(object):
         s = self.__repr__()
         bps = tuple(p.numbreakpoints for p in self)
         return hash((hash(s), hash(bps)))
+
+    @property
+    def duration(self):
+        return self.t1 - self.t0
         
     @property
     def t1(self):
@@ -210,7 +214,7 @@ class Spectrum(object):
         maxfreq: max. frequency of a partial
         minbps: min. number of breakpoints of a partial
 
-        SEE ALSO: filtercurve
+        SEE ALSO: filtercurve, adaptive_filter
         """
         out = []
         minamp = db2amp(minamp)
@@ -746,7 +750,7 @@ def _namedtup2partial(p):
     """
     p is a namedtuple _Partial
     """
-    return Partial(p.time, p.freq, p.amp, p.phase, p.bw, label=p.label)
+    return Partial(p.time, p.freq, p.amp, phases=p.phase, bws=p.bw, label=p.label)
 
 
 def readspectrum(path):

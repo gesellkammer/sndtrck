@@ -25,7 +25,7 @@ logger = logging.getLogger("sndtrck")
 Bpf = bpf4.BpfInterface
 
 
-def bpf2partial(freq, amp, dt=0.010):
+def bpf2partial(freq, amp, bw=None, dt=0.010):
     # type: (Bpf, Bpf, float) -> Partial
     """
     Create a Partial from a bpf representing
@@ -44,6 +44,7 @@ def bpf2partial(freq, amp, dt=0.010):
     """
     f = bpf4.asbpf(freq)
     a = bpf4.asbpf(amp)
+        
     x0 = max(f.bounds()[0], a.bounds()[0])
     x1 = min(f.bounds()[1], a.bounds()[1])
     if dt <= 0:
@@ -52,8 +53,11 @@ def bpf2partial(freq, amp, dt=0.010):
     times = np.linspace(x0, x1, numsamples)
     freqs = f.mapn_between(numsamples, x0, x1)
     amps = a.map(times)
+    if bw:
+        bws = bpf4.asbpf(bw).map(times)
+        
     assert len(times) == len(freqs) == len(amps)
-    p = Partial(times, freqs, amps)
+    p = Partial(times, freqs, amps, bws=bws)
     return p
 
 

@@ -29,7 +29,7 @@ HAVE_OPENGL = False
 pg.setConfigOptions(
     background=(0, 0, 0),
     useOpenGL=True,
-    # enableExperimental=True,
+    enableExperimental=True,
     antialias=True
 )
 
@@ -88,7 +88,6 @@ class MultiColouredLine(GraphicsObject):
         return (self.y0, self.y1)
 
     def generatePicture(self):
-        logger.debug("generatePicture")
         if not self.data:
             return
         picture = QtGui.QPicture()
@@ -154,13 +153,6 @@ class MultiColouredLine(GraphicsObject):
         self._boundingRect = QtCore.QRectF(xmn-px, ymn-py, (2*px)+xmx-xmn, (2*py)+ymx-ymn)
         return self._boundingRect
 
-    def hoverEvent(self, event):
-        if event.isExit():
-            return
-        pos = event.pos()
-        self._mousex = pos.x()
-        self._mousey = pos.y()
-
 
 def _colormapGray(x, alpha):
     x2 = int(x * 255)
@@ -193,58 +185,7 @@ def _colormapHeat(x, alpha):
     elif j >= 4:
         r, g, b = (255, 255, 255)
     return int(r), int(g), int(b), alpha
-
-
-class SndtrckPlotWindow(pg.PlotWindow):
-    def __init__(self, *args, **kws):
-        super().__init__(*args, **kws)
-        self._mousex = 0
-        self._mousey = 0
-        self.useOpenGL(True)
-
-    def hoverEvent(self, event):
-        if event.isExit():
-            return
-        pos = event.pos()
-        self._mousex = pos.x()
-        self._mousey = pos.y()
-
-
-class SndtrckPlotWidget(pg.PlotWidget):
-    def __init__(self, *args, **kws):
-        super().__init__(*args, **kws)
-        self._mousex = 0
-        self._mousey = 0
-        self.useOpenGL(True)
-
-    def hoverEvent(self, event):
-        print(event)
-
-        if event.isExit():
-            return
-        pos = event.pos()
-        self._mousex = pos.x()
-        self._mousey = pos.y()
-        
-def _getview(plotview=True):
-    if plotview:
-        # this is copyied from pg.plot, we copy that to use our own PlotWindow to
-        # override the hover callback and update the mouse
-        pg.mkQApp()
-        w = SndtrckPlotWindow(
-            title="plot",
-            name="plot")
-        pg.plots.append(w)
-        w.show()
-        return w
-
-    w = pg.GraphicsWindow()
-    w.useOpenGL(True)    
-    w.setWindowTitle('pyqtgraph example: GraphItem')
-    v = w.addViewBox()
-    v.setAspectLocked()
-    return w
-
+  
 
 _db2lin = bpf.linear(-120, 0.001, -60, 0.1, -12, 0.75, -3, 0.85, 0, 1)
 _bw2lin = bpf.linear(0, 0.1, 
@@ -254,10 +195,15 @@ _bw2lin = bpf.linear(0, 0.1,
                      1, 0.99)
 # _bw2lin = bpf.linear(0, 0.99, 0.5, 0.5, 1, 0.1)
 
+_ownapp = None
+
 @contextmanager
 def qtapp(ownapp=False):
+    global _ownapp
     if ownapp:
         app = QtGui.QApplication([])
+        # Keep a reference here
+        _ownapp = app
     else:
         app = QtCore.QCoreApplication.instance()
         if app is None:
@@ -266,6 +212,38 @@ def qtapp(ownapp=False):
     if ownapp or not lib.ipython_qt_eventloop_started():
         print("*************************************** starting eventloop")
         app.exec_()
+
+def plotpartials_(v, partials, allpens, *, widget=None, exp=1, downsample=1, antialias=True, kind='amp', pitchmode='freq'):
+    numpens = len(allpens)
+    getZ = lambda partial:partial.amps
+    curve = _db2lin
+
+    def transform(arr):
+        arr = amp2db_np(arr)
+        return curve.map(arr, out=arr)
+
+    for partial in partials:
+        X = partial.times
+        Y = partial.freqs
+        Z = getZ(partial)
+        if downsample > 1:
+            X = X[::downsample]
+            Y = Y[::downsample]
+            Z = Z[::downsample]
+        Z = transform(Z)
+        if exp != 1:
+            Z **= exp
+        colors = (Z[1:] + Z[:-1]) * (0.5 * numpens)
+        # colors = np.floor(colors, out=colors)
+        colors = colors.astype(int)
+        colors.clip(0, numpens-1, out=colors)
+        pens = [allpens[col] for col in colors]
+        if pitchmode == 'note':
+            Y = f2m_np(Y, out=Y)
+        line = MultiColouredLine()
+        line.add(X, Y, pens)
+        v.addItem(line, ignoreBounds=True)
+    return line
 
 
 def plotpartials(v, partials, allpens, *, widget=None,
@@ -334,9 +312,6 @@ def set_temp_options(**options) -> dict:
     return oldopts
 
 
-_plotapp = None
-
-
 def plotspectrum(s, *, downsample=1, alpha:int=255, linewidth:int=2, 
                  exp=1, numcolors=500, antialias=True,
                  background=None, kind='amp', pitchmode='freq'):
@@ -359,6 +334,8 @@ def plotspectrum(s, *, downsample=1, alpha:int=255, linewidth:int=2,
         v.setRange(rect)
         v.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=24000)
         pg.setConfigOptions(**oldopts)
+        # v.scene().sigMouseMoved.connect(lambda *args:print("***********", args))
+        # proxy = pg.SignalProxy(v.scene().sigMouseMoved, rateLimit=40, slot=lambda *args: print(">>>>", args))
     return v, plot
 
 

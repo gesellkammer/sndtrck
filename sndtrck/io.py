@@ -2,8 +2,9 @@ import warnings
 import subprocess as _subprocess
 import platform as _platform
 import numpy as np
-from collections import namedtuple
+# from collections import namedtuple
 import logging
+from typing import NamedTuple
 
 from . import backend_loris
 from . import backend_pysdif
@@ -33,6 +34,13 @@ For soundfile io, use sndfileio directly
 """
 
 logger = logging.getLogger("sndtrck")
+
+
+class EstimateF0(NamedTuple):
+    freq: bpf.core.Linear
+    confidence: bpf.core.Linear
+
+# EstimateF0 = namedtuple("EstimateF0", ["freq", "confidence"])
 
 
 def tosdif(matrices: Iter[np.ndarray], 
@@ -285,6 +293,7 @@ def fromhdf5(path: str) -> Tup[List[np.ndarray], List[int]]:
     store.close()
     return matrices, labels
 
+
 def synthesize(matrices: Iter[np.ndarray], samplerate=44100) -> np.ndarray:
     """
     Synthesize a Spectrum
@@ -300,9 +309,6 @@ def synthesize(matrices: Iter[np.ndarray], samplerate=44100) -> np.ndarray:
         if backend.is_available() and backend.get_info().get('synthesize', False):
             return backend.synthesize(matrices, samplerate)
     raise BackendNotAvailable("No backend can synthesize this spectrum")
-
-
-EstimateF0 = namedtuple("EstimateF0", ["freq", "confidence"])
 
 
 def estimatef0(matrices: Iter[np.ndarray], minfreq=30, maxfreq=3000, interval=.1,
@@ -335,24 +341,31 @@ def estimatef0(matrices: Iter[np.ndarray], minfreq=30, maxfreq=3000, interval=.1
         freq *= (conf >= minconfidence)
     return EstimateF0(freq, conf)
 
-    
+
 # -------
 # HELPERS
 # ------- 
 
 
-def open_spectrum_in_spear(filepath, wait=True):
-    # type: (str, bool) -> None
+def open_spectrum_in_spear(filepath: str, wait=True) -> None:
+    """
+    Open a .txt or .sdif file in spear
 
-    def osx(path):
+    Assumes that spear is installed
+
+    (in Linux, assumes SPEAR is installed via wine)
+    """
+    platf = _platform.system()
+    
+    if platf == 'Darwin':
         if not wait:
             raise NotImplemented("waiting is not implemented in OSX")
-        _subprocess.call('open -a SPEAR "%s"' % path, shell=True)
-
-    def win(path):
+        _subprocess.call('open -a SPEAR "%s"' % filepath, shell=True)
+    
+    elif platf == 'Windows':
         raise NotImplementedError()
-
-    def linux(path):
+    
+    elif platf == 'Linux':
         locations = ["~/.wine/drive_c/Program Files (x86)/SPEAR/spear.exe"]
         for location in locations:
             spearexe = normalizepath(location)
@@ -361,19 +374,13 @@ def open_spectrum_in_spear(filepath, wait=True):
         else:
             raise RuntimeError("SPEAR was not found. Locations searched: %s"
                                % str(locations))
-        path = os.path.abspath(path)
+        path = os.path.abspath(filepath)
         cmd = 'wine "%s" %s' % (spearexe, path)
         print(cmd)
         if wait:
-            return _subprocess.call(cmd, shell=True)
+            _subprocess.call(cmd, shell=True)
         else:
-            return _subprocess.Popen(cmd, shell=True)
-
-    f = {
-        'Darwin': osx,
-        'Windows': win,
-        'Linux': linux
-    }.get(_platform.system())
-    if f:
-        f(filepath)
+            _subprocess.Popen(cmd, shell=True)
+    else:
+        raise KeyError(f"Platform {platf} not known")
 

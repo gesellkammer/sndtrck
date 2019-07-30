@@ -3,6 +3,7 @@ from math import log
 import numpy as np
 import pysndfile
 from .config import config
+from .typehints import Tup
 
 
 def checktype(x, types):
@@ -16,14 +17,9 @@ def aslist(x):
     return list(x)
 
 
-def _interpol_slow(x, x0, y0, x1, y1):
+def interpol_linear(x, x0, y0, x1, y1):
     # type: (float, float, float, float, float) -> float
     return (x-x0)/(x1-x0)*(y1-y0)+y0
-
-try:
-    from interpoltools import interpol_linear
-except ImportError:
-    interpol_linear = _interpol_slow
 
 
 def isiterable(obj):
@@ -52,12 +48,15 @@ def sndreadmono(sndfile, channel=0, start=0, end=0):
     return mono, sr
 
 
+class FfmpegError(Exception): pass
+
+
 def _convert_mp3_wav(mp3, wav, start=0, end=0):
     import subprocess
     import shutil
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise RuntimeError("Can't read mp3: ffmpeg is not present")
+        raise FffmpegError("Can't read mp3: ffmpeg is not present")
     cmd = [ffmpeg]
     if start > 0:
         cmd.extend(["-ss", str(start)])
@@ -68,7 +67,7 @@ def _convert_mp3_wav(mp3, wav, start=0, end=0):
     subprocess.call(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
 
-def _sndread_mp3(mp3, start=0, end=0):
+def _sndread_mp3_ffmpeg(mp3, start=0, end=0):
     import tempfile
     wav = tempfile.mktemp(suffix=".wav")
     _convert_mp3_wav(mp3, wav, start=start, end=end)
@@ -77,10 +76,54 @@ def _sndread_mp3(mp3, start=0, end=0):
     return out
 
 
+def _miniaudio_mp3read(path: str, start=0, end=0) -> np.ndarray:
+    """
+    Reads a mp3 files completely into an array
+
+    start, end: if given, in seconds
+    """
+    import miniaudio
+    decoded = miniaudio.mp3_read_file_f32(path)
+    npsamples = np.frombuffer(decoded.samples, dtype='float32')
+    sr = decoded.sample_rate
+    if decoded.nchannels > 1:
+        npsamples.shape = (decoded.num_frames, decoded.nchannels)
+    if start > 0 or end != 0:
+        startframe = int(start * sr)
+        if end == 0:
+            endframe = decoded.num_frames - 1
+        elif end > 0:
+            endframe = int(end * sr)
+        else:
+            endframe = int((decoded.duration + end) * sr)
+        if endframe < startframe:
+            raise ValueError(f"startframe ({startframe}) > endframe ({endframe})")
+        npsamples = npsamples[startframe:endframe+1]
+    npsamples = npsamples.astype(float)
+    return npsamples, sr
+
+
+def _sndread_mp3(mp3, start=0, end=0):
+    try:
+        return _miniaudio_mp3read(mp3, start=start, end=end)
+    except ImportError:
+        pass
+
+    try:
+        return _sndread_mp3_ffmpeg(mp3, start=0, end=0)
+    except FfmpegError:
+        pass
+
+    raise IOError("Can't read mp3 file. Either miniaudio must be installed"
+                  " or ffmpeg must be present in the system")
+
+
 def sndread(sndfile, start=0, end=0):
     ext = os.path.splitext(sndfile)[1]
+
     if ext == '.mp3':
         return _sndread_mp3(sndfile, start=start, end=end)
+    
     sf = pysndfile.PySndfile(sndfile)
     sr = sf.samplerate()
     duration = sf.frames() / sr
@@ -175,4 +218,5 @@ def f2m(freq: float) -> float:
     if freq < 9:
         return 0
     return 12.0 * log(freq/a4, 2) + 69.0
+
 

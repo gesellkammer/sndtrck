@@ -17,13 +17,13 @@ def contrast(spectrum: sp.Spectrum, mid:float, exp=1.0) -> sp.Spectrum:
          1 - full effect 
          > 1: possible, needs rescaling
 
-    formula: B = A * (A/mid)**exp
-    """
+    formula: newamps = amps * (amps/mid)**exp
+    """ 
     assert mid <= 0
     mid = db2amp(mid)
     newpartials = []
     for partial in spectrum.partials:
-        A = partial.amp.points()[1]
+        A = partial.amps
         B = A * (A/mid)**exp
         newpartial = partial.clone(amps=B)
         newpartials.append(newpartial)
@@ -70,5 +70,3 @@ def sort_by_energy(spectrum: sp.Spectrum) -> t.List[sp.Partial]:
 def loudest_partials(spectrum: sp.Spectrum, maxpartials: int) -> sp.Spectrum:
     partials = sort_by_energy(spectrum)
     return sp.Spectrum(partials[:maxpartials])
-
-    

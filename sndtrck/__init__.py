@@ -12,4 +12,5 @@ from . import synthesis
 from .analysis import *
 from . import fx
 from .config import getconfig, resetconfig
+from .reduction import adaptive_filter
 from .version import __version__

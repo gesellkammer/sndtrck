@@ -72,7 +72,7 @@ DEFAULT_CONFIG = {
     'plot.downsample': 1,
     'plot.linewidth': 2,
     'plot.showpoints_disables_downsample': True,
-    'A4': 440
+    'A4': 442
 }
 
 

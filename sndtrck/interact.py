@@ -70,10 +70,10 @@ class Cursor(GraphicsObject):
         
         px = self.pixelLength(direction=Point(1,0), ortho=True) or 0   # get pixel length orthog. to line
         w = 1 * px
-        # br.setLeft(-w)
-        br.setLeft(0)
-        # br.setRight(w)
-        br.setRight(0)
+        br.setLeft(-w)
+        #br.setLeft(0)
+        br.setRight(w)
+        # br.setRight(0)
         
         br = br.normalized()
         self._boundingRect = br
@@ -94,25 +94,18 @@ class Cursor(GraphicsObject):
             # self.sigPlotChanged.emit(self)
             # self._boundingRect = None
             GraphicsObject.setPos(self, Point([self.pos, 0]))
-            self.sigPositionChanged.emit(self)
+            # self.sigPositionChanged.emit(self)
 
 
 class _SpectrumWidget:
 
     def __init__(self, full=True):
-        # app = QtCore.QCoreApplication.instance()
-        self.app_created = False
-        app = None
-        #if app is None:
-        #    logger.debug("************************** creating QApplication")
-        #    app = QtGui.QApplication([])
-        #    self.app_created = True
-        #else:
-        #    self.app_created = False
         self.plotview = None
         self.partialsplot = None
         self.plotparams = {}
-        self._app = app
+        self._scenepos = None
+        self._refs = []
+        self._vb = None
         
         if not full:
             print("******************* not full ******************* ")
@@ -121,7 +114,6 @@ class _SpectrumWidget:
             self._fullwidget = False
             self._root = self.plotview
             self._win = None
-            self._app = app
             return
 
         labelwidth, valuewidth = 80, 70
@@ -223,8 +215,16 @@ class _SpectrumWidget:
         layout.addWidget(self.quitbtn, row, 0)
         row += 1
         
-    def show(self):
+    def show(self) -> None:
         self._win = self._root.show()
+
+    def _mouseMoved(self, ev) -> None:
+        # snipped taken from https://stackoverflow.com/questions/35528198/returning-mouse-cursor-coordinates-in-pyqtgraph
+        self._scenepos = ev[0]
+
+    def mousepos(self):
+        # return self.plotview.plotItem.vb.mapSceneToView(self._scenepos)
+        return self._vb.mapSceneToView(self._scenepos)
         
     def plotspectrum(self,
                      s: _sp.Spectrum,
@@ -251,17 +251,19 @@ class _SpectrumWidget:
             exp = config['spectrumeditor.exp']
         if numcolors < 0:
             numcolors = config['spectrumeditor.numcolors']
-        oldopts = ppg.set_temp_options(background=background)
-        v = self.plotview
-        if v is None:
-            self.plotview = v = pg.PlotWidget()
-            # pg.SignalProxy(v.scene().sigMouseMoved, rateLimit=30, slot=lambda event: print(event))
+        oldopts = ppg.set_temp_options(background=background, useOpenGL=True)
+        if self.plotview is None: 
+            # self.plotview = ppg.SndtrckPlotWidget()
+            self.plotview = pg.PlotWidget()
             self._layout.addWidget(self.plotview, 0, 2, 20, 1)
+            self._refs.append(pg.SignalProxy(self.plotview.scene().sigMouseMoved, rateLimit=20, slot=self._mouseMoved))
+            self._vb = self.plotview.plotItem.vb
+            
         allpens = ppg.makepens(numcolors, alpha, linewidth)
         if self.partialsplot is None:
-            v.setRange( QtCore.QRect(s.t0, 100, s.t1, 5000) )
-            v.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=22000)
-        self.partialsplot = ppg.plotpartials(v, s, allpens, exp=exp, downsample=downsample,
+            self.plotview.setRange( QtCore.QRect(s.t0, 100, s.t1, 5000) )
+            self.plotview.centralWidget.vb.setLimits(xMin=0, xMax=s.t1+0.1, yMin=0, yMax=22000)
+        self.partialsplot = ppg.plotpartials(self.plotview, s, allpens, exp=exp, downsample=downsample,
                                              antialias=antialias, kind=kind, widget=self.partialsplot)
         pg.setConfigOptions(**oldopts)
         self.plotparams.update(
@@ -269,16 +271,8 @@ class _SpectrumWidget:
             numcolors=numcolors, background=background, kind=kind
         )
 
-
     def close(self):
-        if self.app_created:
-            logger.debug("********************* quitting application")
-            # self._app.quit()
-        
-    def execloop(self):
-        if self.app_created:
-            logger.debug("calling app.exec_()")
-            self._app.exec_()
+        logger.debug("********************* SpectrumWidget.close")
 
 
 def plotspectrum(s: _sp.Spectrum, *,
@@ -323,9 +317,11 @@ class SpectrumEditor:
 
         # Playhead
         self._playhead_last = -1
+        
         self._cursor = Cursor(self.playheadpos)
-        self._cursor.setZValue(100)
-        self.view.addItem(self._cursor)
+        self._cursor.setZValue(100)    
+        self.view.addItem(self._cursor, ignoreBounds=True)
+
         self._cursor_update_visibility()
         
         def on_poschange(pos, self=self):
@@ -398,6 +394,8 @@ class SpectrumEditor:
 
         self._set_callbacks()
         self._plot.setFocus()
+
+
         # self.ui.execloop()
 
     def _set_callbacks(self) -> None:
@@ -441,8 +439,8 @@ class SpectrumEditor:
 
         setkey("Space", lambda self=self:self.ui.play.setChecked(not self.playing))                                
         setkey("l", lambda:self.ui.loop.setChecked(not self._looping))
-        setkey("b", lambda:self.set_editpos(self._plot._mousex))
-        setkey("e", lambda:self.set_endpos(self._plot._mousex) or self.ui.loop.setChecked(True))
+        setkey("b", lambda:self.set_editpos(self.ui.mousepos().x()))
+        setkey("e", lambda:self.set_endpos(self.ui.mousepos().x()) or self.ui.loop.setChecked(True))
         setkey("f", lambda:self.ui.filterchk.setCheckState(not self._filter_active))
         setkey("p", lambda:self.ui.nearest_partial.setCheckState(not self._state.get('synth_nearest', False)))
         setkey("0", lambda:self.ui.scrub.setChecked(not self._state.get('tempspeed', False)))
@@ -504,7 +502,7 @@ class SpectrumEditor:
             self._state['tempspeed'] = True
             self._state['tempspeed.lastspeed'] = self._speed
             self.set_speed(0)
-            self.set_editpos(self._plot._mousex)
+            self.set_editpos(self.ui.mousepos().x())
             self.set_looping(False)
             self.play(True)
         else:
@@ -518,11 +516,11 @@ class SpectrumEditor:
 
         def updatesine():
             synth = self._sinesynth
-            mousey = self._plot._mousey
+            mousey = self.ui.mousepos().y()
             synth.setFreq(mousey)
 
         if state:
-            self._sinesynth = SineSynth(freq=self._plot._mousey, amp=0.75)
+            self._sinesynth = SineSynth(freq=self.ui.mousepos().y(), amp=0.75)
             self._addtask("sinesynth", updatesine)
         else:
             self._removetask("sinesynth")
@@ -540,7 +538,7 @@ class SpectrumEditor:
             method = config['show.show_chord.method']
 
         if t is None:
-            t = self._plot._mousex
+            t = self.ui.mousepos().x()
         numnotes = self._num_loudest_partials
         chord = self.spectrum.chord_at(t, maxnotes=numnotes)
         chord.asmusic21().show(method)
@@ -602,7 +600,8 @@ class SpectrumEditor:
 
         def loudest_task(self=self, minamp=db2amp(minamp_db)):
             pl = self._plot
-            time = pl._mousex
+            mousepos = self.ui.mousepos()
+            time = mousepos.x()
             lasttime = self._state.get('synth_loudest.lasttime', -1)
             if abs(time - lasttime) < 0.001 or time <= 0:
                 return
@@ -657,8 +656,9 @@ class SpectrumEditor:
         def update(self=self):
             synth = self._sinesynth
             pl = self._plot
-            time = pl._mousex
-            mousefreq = pl._mousey
+            mousepos = self.ui.mousepos()
+            time = mousepos.x()
+            mousefreq = mousepos.y()
             freq, amp = self._surface.nearest(time, mousefreq)
             if amp < minamp:
                 return
@@ -675,7 +675,7 @@ class SpectrumEditor:
         self._synthcursor.show()
         self._synthcursortxt.show()
         self._surface = SpectralSurface(self.spectrum, decay=0.01)
-        self._sinesynth = SineSynth(freq=self._plot._mousey, amp=0, freqport=0.2, 
+        self._sinesynth = SineSynth(freq=self.ui.mousepos().y(), amp=0, freqport=0.2, 
                                     gain=gain)
         self._addtask("nearest", update)   
         self._state['synth_nearest'] = True
@@ -711,6 +711,7 @@ class SpectrumEditor:
         #    self._synth_loudest_partials(True)
         
     def _cursor_update_visibility(self):
+
         if self.playing and self._speed != 0:
             self._cursor.show()
         else:

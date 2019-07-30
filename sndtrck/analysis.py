@@ -9,6 +9,7 @@ __all__ = [
 ]
 
 
+
 @functools.wraps(_loris.analyze)
 def analyze(*args, **kws):
     partialdata = _loris.analyze(*args, **kws)

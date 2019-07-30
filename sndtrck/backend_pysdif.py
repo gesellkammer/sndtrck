@@ -100,6 +100,7 @@ def write_rbep(outfile, matrices, labels, rbep=True, **kws):
     assert isinstance(matrices[0], np.ndarray)
     assert isinstance(labels, list) or labels is None
     assert isinstance(rbep, bool)
+
     logger.debug("opening %s" % outfile)
     sdif = pysdif.SdifFile(outfile, "w")
     logger.debug("adding type")
@@ -136,7 +137,6 @@ def write_rbep(outfile, matrices, labels, rbep=True, **kws):
         t = arr[bpidx, 0]
         if present[idx]:
             matrix = bigmatrix[:rowidx+1]
-            logger.debug("writing matrix")
             sdif.new_frame_one_matrix("RBEP", frametime, "RBEP", matrix)
             frametime = t
             rowidx = 0
@@ -153,5 +153,4 @@ def write_rbep(outfile, matrices, labels, rbep=True, **kws):
         bigmatrix[rowidx, 5] = t - frametime
     matrix = bigmatrix[:rowidx+1]    
     sdif.new_frame_one_matrix("RBEP", frametime, "RBEP", matrix)
-    logger.debug("closing")
     sdif.close()

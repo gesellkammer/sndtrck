@@ -27,7 +27,6 @@ setup(
     },
     install_requires = [
         "numpy",
-        "sndfileio>=0.6",
         "bpf4>=0.7",
         "loristrck",
         "sounddevice",
@@ -35,9 +34,10 @@ setup(
         "pyqtgraph",
         "notifydict",
         "appdirs",
-        "tinytag",
         "pysdif3",
         "ctcsound",
-        "pyliblo3"
+        "pyliblo3",
+        "emlib",
+        "miniaudio"
     ]
 )
