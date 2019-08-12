@@ -635,7 +635,7 @@ class Spectrum(object):
         """
         raise NotImplementedError
 
-    def simplify(self, pitchdelta=0.01, dbdelta=0.1, bwdelta=0.01):
+    def simplify(self, freqdelta=-1, ampdelta=-1, bwdelta=-1):
         # type: (float, float, float) -> Spectrum
         """ 
         Simplify each partial 
@@ -644,7 +644,7 @@ class Spectrum(object):
         dbdetal: min. difference in dBs
         bwdelta: min. difference in bandwidth
         """
-        newpartials = [p.simplify(pitchdelta=pitchdelta, dbdelta=dbdelta, bwdelta=bwdelta)
+        newpartials = [p.simplify(freqdelta=freqdelta, ampdelta=ampdelta, bwdelta=bwdelta)
                        for p in self]
         return Spectrum(newpartials, skipsort=True)
 
