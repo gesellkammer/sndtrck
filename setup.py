@@ -13,12 +13,17 @@ def get_version():
     version = d.get('__version__', (0, 0, 0))
     return ("%d.%d.%d" % version).strip()
 
+with open('README.md') as f:
+    long_description = f.read()
+
+
 setup(
     name    = "sndtrck",
     version = get_version(),     # update sndtrck/version.py
-    author  = "Eduardo Moguillansky",
-    long_description = open("README.md").read(),
     description = "Sound manipulation and representation via partial-tracking",
+    author  = "Eduardo Moguillansky",
+    long_description = long_description,
+    long_description_content_type='text/markdown',
     # installation
     packages = ["sndtrck"],
     package_data = {
