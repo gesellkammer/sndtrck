@@ -18,6 +18,7 @@ from .sinesynth import SineSynth, MultiSineSynth
 from .spectralsurface import SpectralSurface
 from .config import getconfig
 from . import spectrum as _sp
+from .typehints import List
 
 
 logger = logging.getLogger("sndtrck")
@@ -71,7 +72,6 @@ class Cursor(GraphicsObject):
         px = self.pixelLength(direction=Point(1,0), ortho=True) or 0   # get pixel length orthog. to line
         w = 1 * px
         br.setLeft(-w)
-        #br.setLeft(0)
         br.setRight(w)
         # br.setRight(0)
         
@@ -116,7 +116,7 @@ class _SpectrumWidget:
             self._win = None
             return
 
-        labelwidth, valuewidth = 80, 70
+        labelwidth, valuewidth = 120, 70
         spinfontsize, labelfontsize = 10, 10
         self._fullwidget = True
 
@@ -152,7 +152,7 @@ class _SpectrumWidget:
             row += 1
             return chk
 
-        def addcombo(label:str, options:'List[str]') -> QtGui.QComboBox:
+        def addcombo(label:str, options: List[str]) -> QtGui.QComboBox:
             nonlocal row
             combo = QtGui.QComboBox()
             for opt in options:
@@ -161,6 +161,11 @@ class _SpectrumWidget:
             layout.addWidget(combo, row, 1)
             row += 1
             return combo
+
+        def addlabel(text:str) -> None:
+            nonlocal row
+            layout.addWidget(makelabel(text), row, 0)
+            row += 1
 
         def addspin(label:str, value:float, step=0.1, decimals=1, maximum=999999, minimum=0):
             nonlocal row
@@ -196,6 +201,8 @@ class _SpectrumWidget:
         self.filterchk        = addcheckbox("Filter (f)")
         self.nearest_partial  = addcheckbox("Nearest (p)")
         self.loudest_partials = addcheckbox("Loudest (k)")
+        addlabel("Start cursor: b")
+        addlabel("End cursor: e")
         self.numloudest = addspin("Max. Partials", value=4, step=1, decimals=0)
         self.kind = addcombo("Kind", ["Amplitude", "Bandwidth"])
         self.exponent = addspin("Exponent", value=cfg["spectrumeditor.exp"], 
